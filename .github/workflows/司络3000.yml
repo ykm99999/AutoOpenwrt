@@ -1,4 +1,4 @@
-name: 司洛SL-3000 软件包编译
+name: 司络SL-3000 软件包编译
 
 on:
   repository_dispatch:
