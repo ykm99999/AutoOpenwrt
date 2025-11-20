@@ -1,0 +1,67 @@
+name: Build Packages for SL3000
+
+on:
+  workflow_dispatch:
+    inputs:
+      clean_build:
+        description: 'Clean build'
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install build dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          clang \
+          cmake \
+          git \
+          libssl-dev \
+          ncurses-dev \
+          python3 \
+          python3-pip \
+          python3-setuptools \
+          unzip \
+          wget \
+          curl \
+          file \
+          rsync \
+          bc \
+          subversion \
+          quilt \
+          libelf-dev \
+          patchelf \
+          gawk \
+          flex \
+          bison \
+          zlib1g-dev
+
+    - name: Clone ImmortalWrt source
+      run: |
+        git clone --depth=1 https://github.com/padavanonly/immortalwrt-mt798x-24.10 -b 2410 immortalwrt
+
+    - name: Clean build (optional)
+      if: ${{ inputs.clean_build }}
+      working-directory: immortalwrt
+      run: |
+        make distclean || true
+        git clean -fdx
+
+    - name: Setup build environment
+      working-directory: immortalwrt
+      run: |
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+        
+        # Create basic config
+        cat > .config << 'EOF'
+CONFIG_TARGET
