@@ -31,6 +31,12 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
+      - name: Prepare host tools (fix libdeflate-gzip issue)
+        working-directory: openwrt-sdk
+        run: |
+          make tools/libdeflate/compile V=s
+          make toolchain/compile V=s
+
       - name: Compile Docker + Passwall2 + Dependencies
         working-directory: openwrt-sdk
         run: |
