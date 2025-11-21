@@ -24,11 +24,10 @@ jobs:
           tar -xf openwrt-sdk-21.02.3-armvirt-64_gcc-8.4.0_musl.Linux-x86_64.tar.xz
           mv openwrt-sdk-21.02.3-armvirt-64_gcc-8.4.0_musl.Linux-x86_64 openwrt-sdk
 
-      - name: Add feeds (Passwall2 + Docker + Dependencies)
+      - name: Add feeds (Passwall2 only)
         working-directory: openwrt-sdk
         run: |
           echo "src-git passwall https://github.com/xiaorouji/openwrt-passwall2.git" >> feeds.conf.default
-          echo "src-git packages https://github.com/openwrt/packages.git" >> feeds.conf.default
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
