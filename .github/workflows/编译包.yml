@@ -1,4 +1,4 @@
-name: 司洛SL-3000 ImmortalWrt 稳定编译
+name: 司洛SL-3000 ImmortalWrt 编译 - 修复工具链
 
 on:
   workflow_dispatch:
@@ -6,29 +6,19 @@ on:
 env:
   REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x
   REPO_BRANCH: main
-  CONFIG_FILE: sl3000.config
-  UPLOAD_FIRMWARE: true
-  UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 180
+    timeout-minutes: 200
 
     steps:
-    - name: 检查工作空间
-      run: |
-        echo "=== 初始资源状态 ==="
-        df -h
-        free -h
-
-    - name: Checkout 代码
+    - name: Checkout
       uses: actions/checkout@v4
 
-    - name: 安装完整编译依赖
+    - name: 安装完整依赖
       run: |
-        echo "=== 安装完整编译依赖 ==="
         sudo apt-get update
         sudo apt-get install -y \
           build-essential \
@@ -63,82 +53,73 @@ jobs:
           libgmp3-dev \
           libmpc-dev \
           libmpfr-dev \
-          libltdl-dev
+          libltdl-dev \
+          meson \
+          ninja-build
 
-    - name: 深度磁盘清理
+    - name: 清理空间
       run: |
-        echo "=== 深度磁盘清理 ==="
         sudo apt-get autoremove -y
         sudo apt-get clean
-        sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache 2>/dev/null || true
-        sudo rm -rf /var/lib/apt/lists/* /tmp/* 2>/dev/null || true
-        echo "清理后磁盘空间:"
-        df -h
+        sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android 2>/dev/null || true
 
-    - name: 配置智能缓存
+    - name: 配置缓存
       uses: actions/cache@v3
       with:
         path: |
           ~/.ccache
           ./openwrt/dl
+          ./openwrt/staging_dir
           ./openwrt/build_dir
-        key: ${{ runner.os }}-sl3000-stable-${{ github.sha }}
+        key: ${{ runner.os }}-sl3000-full-${{ github.sha }}
         restore-keys: |
-          ${{ runner.os }}-sl3000-stable-
+          ${{ runner.os }}-sl3000-full-
 
-    - name: 克隆稳定版源码
+    - name: 克隆源码
       run: |
-        echo "=== 克隆 ImmortalWrt MT798x 主分支 ==="
-        
         if [ -d "openwrt" ] && [ -d "openwrt/.git" ]; then
-          echo "使用现有仓库并更新"
           cd openwrt
           git fetch --depth=1 origin main
           git reset --hard origin/main
         else
-          echo "克隆新仓库"
           rm -rf openwrt
           git clone --depth=1 --branch $REPO_BRANCH $REPO_URL openwrt
         fi
 
-    - name: 修复工具链问题
+    - name: 修复 libdeflate 问题
       run: |
         cd openwrt
         
-        echo "=== 修复工具链和依赖问题 ==="
+        echo "=== 修复 libdeflate 工具链问题 ==="
+        
+        # 手动修复 libdeflate 问题
+        if [ ! -f "dl/libdeflate-1.18.tar.gz" ]; then
+          wget -P dl/ https://github.com/ebiggers/libdeflate/archive/refs/tags/v1.18.tar.gz -O dl/libdeflate-1.18.tar.gz
+        fi
         
         # 确保 feeds 配置正确
         cat > feeds.conf.default << 'EOF'
 src-git packages https://git.openwrt.org/feed/packages.git
 src-git luci https://git.openwrt.org/project/luci.git
 src-git routing https://git.openwrt.org/feed/routing.git
-src-git telephony https://git.openwrt.org/feed/telephony.git
 EOF
 
-        # 更新 feeds
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    - name: 应用设备配置
+    - name: 创建极简配置
       run: |
         cd openwrt
         
-        echo "=== 应用设备配置 ==="
+        echo "=== 创建极简配置 ==="
         
-        if [ -f "../$CONFIG_FILE" ]; then
-          echo "使用自定义配置文件"
-          cp "../$CONFIG_FILE" .config
-        else
-          echo "使用精简配置避免依赖问题"
-          cat > .config << 'EOF'
+        cat > .config << 'EOF'
 CONFIG_TARGET_mediatek=y
 CONFIG_TARGET_mediatek_mt7981=y
 CONFIG_TARGET_mediatek_mt7981_DEVICE_cmcc_rax3000m-nand-ubootmod=y
+CONFIG_TARGET_ROOTFS_PARTSIZE=256
 
-# 基础系统
-CONFIG_TARGET_ROOTFS_PARTSIZE=512
-
-# 核心包 - 避免复杂依赖
+# 基础包 - 避免复杂依赖
 CONFIG_PACKAGE_luci=y
 CONFIG_PACKAGE_luci-base=y
 CONFIG_PACKAGE_luci-compat=y
@@ -153,108 +134,71 @@ CONFIG_PACKAGE_kmod-mt7981-firmware=y
 CONFIG_PACKAGE_block-mount=y
 CONFIG_PACKAGE_fdisk=y
 
-# 简化配置，避免问题包
+# 跳过有问题的包
+# CONFIG_PACKAGE_lua is not set
 # CONFIG_PACKAGE_luci-app-passwall2 is not set
 # CONFIG_PACKAGE_docker is not set
 EOF
-        fi
         
         make defconfig
 
-    - name: 预下载工具链
+    - name: 手动编译工具链
       run: |
         cd openwrt
         
-        echo "=== 预下载工具链和核心包 ==="
+        echo "=== 手动编译工具链 ==="
         
-        # 先下载工具链相关包
-        make toolchain/download -j2
-        make toolchain/install -j2
+        # 先编译 host 工具
+        echo "编译 host 工具..."
+        make tools/compile -j1 V=s
         
-        # 下载核心包
-        make package/lua/host/download -j2
-        make package/luci-base/host/download -j2
+        # 编译 toolchain
+        echo "编译 toolchain..."
+        make toolchain/compile -j1 V=s
+        
+        # 检查工具是否就位
+        echo "检查编译工具:"
+        ls -la staging_dir/host/bin/ | grep gzip || true
 
-    - name: 下载所有软件包
+    - name: 下载所有包
       run: |
         cd openwrt
-        
-        echo "=== 下载所有软件包 ==="
         make download -j2
-        
-        # 检查下载完整性
-        echo "下载文件检查:"
-        find dl -name "*.gz" -o -name "*.xz" -o -name "*.bz2" | head -10
-        echo "dl目录大小:"
-        du -sh dl/
 
-    - name: 分阶段编译
-      id: compile
+    - name: 分步编译
       run: |
         cd openwrt
         
-        echo "=== 分阶段编译 ==="
-        echo "编译前资源状态:"
-        free -h
-        df -h
+        echo "=== 分步编译固件 ==="
         
-        # 分阶段编译，确保工具链先完成
-        echo "阶段1: 编译工具链..."
-        make toolchain/compile -j2
+        # 逐步编译，确保每一步都成功
+        echo "1. 编译目标工具..."
+        make target/compile -j2 || make target/compile -j1 V=s
         
-        echo "阶段2: 编译目标工具..."
-        make target/compile -j2
+        echo "2. 编译内核..."
+        make target/linux/compile -j2 || make target/linux/compile -j1 V=s
         
-        echo "阶段3: 编译软件包..."
+        echo "3. 编译基础包..."
         make package/compile -j2 || make package/compile -j1 V=s
         
-        echo "阶段4: 最终链接..."
-        make package/install -j2
-        
-        echo "阶段5: 生成镜像..."
-        make target/install -j2
-        
-        echo "status=success" >> $GITHUB_OUTPUT
-        echo "DEVICE_NAME=sl3000" >> $GITHUB_ENV
-        echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+        echo "4. 最终编译..."
+        make -j2 || make -j1 V=s
 
-    - name: 整理固件文件
-      if: steps.compile.outputs.status == 'success' && !cancelled()
-      run: |
-        cd openwrt/bin/targets/*/*
-        echo "=== 固件文件 ==="
-        ls -la
-        rm -rf packages 2>/dev/null || true
-        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-
-    - name: 上传固件制品
-      if: steps.compile.outputs.status == 'success' && !cancelled()
+    - name: 上传固件
+      if: success()
       uses: actions/upload-artifact@v4
       with:
-        name: ImmortalWrt_SL3000_固件_${{ env.FILE_DATE }}
-        path: ${{ env.FIRMWARE }}/*
+        name: SL3000-固件
+        path: openwrt/bin/targets/**/*
         retention-days: 30
 
-    - name: 发布到 GitHub Release
-      if: env.UPLOAD_RELEASE == 'true' && steps.compile.outputs.status == 'success' && !cancelled()
+    - name: 发布 Release
+      if: success()
       uses: softprops/action-gh-release@v2
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        files: ${{ env.FIRMWARE }}/*
-        tag_name: sl3000-build-${{ env.FILE_DATE }}
-        name: 司洛 SL-3000 固件 ${{ env.FILE_DATE }}
-        body: |
-          # 司洛 SL-3000 ImmortalWrt 固件
-          🚀 稳定版编译完成
+        files: openwrt/bin/targets/**/*
+        tag_name: sl3000-$(date +%Y%m%d-%H%M)
+        name: SL3000 固件 $(date +%Y-%m-%d)
         draft: false
-        prerelease: false
-
-    - name: 编译状态通知
-      if: always()
-      run: |
-        if [ "${{ steps.compile.outputs.status }}" = "success" ]; then
-          echo "🎉 固件编译成功!"
-        else
-          echo "❌ 编译失败"
-        fi
