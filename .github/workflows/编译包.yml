@@ -1,4 +1,4 @@
-name: Build Passwall2 Package for SL-3000
+name: Build Docker + Passwall2 Full Packages for SL-3000
 
 on:
   workflow_dispatch:
@@ -18,28 +18,49 @@ jobs:
             libncurses5-dev libncursesw5-dev zlib1g-dev gawk \
             flex gettext libssl-dev xsltproc rsync libdeflate-dev libdeflate-tools
 
-      - name: Clone OpenWrt SDK (aarch64_cortex-a53)
+      - name: Download OpenWrt SDK (aarch64_cortex-a53)
         run: |
           wget https://downloads.openwrt.org/releases/21.02.3/targets/armvirt/64/openwrt-sdk-21.02.3-armvirt-64_gcc-8.4.0_musl.Linux-x86_64.tar.xz
           tar -xf openwrt-sdk-21.02.3-armvirt-64_gcc-8.4.0_musl.Linux-x86_64.tar.xz
           mv openwrt-sdk-21.02.3-armvirt-64_gcc-8.4.0_musl.Linux-x86_64 openwrt-sdk
-          cd openwrt-sdk
-          echo "src-git passwall https://github.com/xiaorouji/openwrt-passwall2.git" >> feeds.conf.default
 
-      - name: Update & install feeds
+      - name: Add feeds (Passwall2 + Docker + Dependencies)
         working-directory: openwrt-sdk
         run: |
+          echo "src-git passwall https://github.com/xiaorouji/openwrt-passwall2.git" >> feeds.conf.default
+          echo "src-git packages https://github.com/openwrt/packages.git" >> feeds.conf.default
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Compile Passwall2 package
+      - name: Compile Docker + Passwall2 + Dependencies
         working-directory: openwrt-sdk
         run: |
+          # Docker
+          make package/utils/docker/compile V=s
+          make package/utils/docker/install V=s
+
+          # Passwall2 主包
           make package/luci-app-passwall2/compile V=s
           make package/luci-app-passwall2/install V=s
 
-      - name: Upload Passwall2 artifacts
+          # Passwall2 依赖链
+          make package/xray-core/compile V=s
+          make package/xray-core/install V=s
+          make package/chinadns-ng/compile V=s
+          make package/chinadns-ng/install V=s
+          make package/haproxy/compile V=s
+          make package/haproxy/install V=s
+          make package/v2ray-geodata/compile V=s
+          make package/v2ray-geodata/install V=s
+
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: passwall2-sl3000
-          path: openwrt-sdk/bin/packages/aarch64_cortex-a53/*/luci-app-passwall2*.ipk
+          name: docker-passwall2-full-sl3000
+          path: |
+            openwrt-sdk/bin/packages/aarch64_cortex-a53/*/docker*.ipk
+            openwrt-sdk/bin/packages/aarch64_cortex-a53/*/luci-app-passwall2*.ipk
+            openwrt-sdk/bin/packages/aarch64_cortex-a53/*/xray-core*.ipk
+            openwrt-sdk/bin/packages/aarch64_cortex-a53/*/chinadns-ng*.ipk
+            openwrt-sdk/bin/packages/aarch64_cortex-a53/*/haproxy*.ipk
+            openwrt-sdk/bin/packages/aarch64_cortex-a53/*/v2ray-geodata*.ipk
