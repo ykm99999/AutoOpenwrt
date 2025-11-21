@@ -1,71 +1,102 @@
-name: Build Docker + Passwall2 Full Packages for SL-3000
+name: Build Custom Packages
 
 on:
   workflow_dispatch:
+    inputs:
+      package_list:
+        description: '要编译的软件包列表（逗号分隔）'
+        required: false
+        default: 'docker,dockerd,luci-app-passwall2'
+        type: string
+
+env:
+  REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  build-packages:
+    runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout source
-        uses: actions/checkout@v4
+    - name: Checkout
+      uses: actions/checkout@v4
 
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential git wget unzip \
-            libncurses5-dev libncursesw5-dev zlib1g-dev gawk \
-            flex gettext libssl-dev xsltproc rsync libdeflate-dev libdeflate-tools
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential libssl-dev libncurses5-dev gawk gettext
 
-      - name: Download OpenWrt SDK (aarch64_cortex-a53)
-        run: |
-          wget https://downloads.openwrt.org/releases/21.02.3/targets/armvirt/64/openwrt-sdk-21.02.3-armvirt-64_gcc-8.4.0_musl.Linux-x86_64.tar.xz
-          tar -xf openwrt-sdk-21.02.3-armvirt-64_gcc-8.4.0_musl.Linux-x86_64.tar.xz
-          mv openwrt-sdk-21.02.3-armvirt-64_gcc-8.4.0_musl.Linux-x86_64 openwrt-sdk
+    - name: Clone Source
+      run: |
+        git clone --depth=1 $REPO_URL openwrt
 
-      - name: Add feeds (Passwall2 only)
-        working-directory: openwrt-sdk
-        run: |
-          echo "src-git passwall https://github.com/xiaorouji/openwrt-passwall2.git" >> feeds.conf.default
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
+    - name: Setup Environment
+      run: |
+        cd openwrt
+        # 修复 feeds 问题
+        sed -i 's|src-git modemfeed|# src-git modemfeed|' feeds.conf.default
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
 
-      - name: Prepare host tools (fix libdeflate-gzip issue)
-        working-directory: openwrt-sdk
-        run: |
-          make tools/libdeflate/compile V=s
-          make toolchain/compile V=s
+    - name: Build Toolchain Only
+      run: |
+        cd openwrt
+        # 最小化配置
+        echo "CONFIG_TARGET_mediatek_mt7981=y" > .config
+        make defconfig
+        # 只编译工具链
+        make toolchain/compile -j2
 
-      - name: Compile Docker + Passwall2 + Dependencies
-        working-directory: openwrt-sdk
-        run: |
-          # Docker
-          make package/utils/docker/compile V=s
-          make package/utils/docker/install V=s
+    - name: Build Requested Packages
+      run: |
+        cd openwrt
+        
+        # 解析包列表
+        IFS=',' read -ra PACKAGES <<< "${{ github.event.inputs.package_list }}"
+        
+        echo "开始编译以下包: ${PACKAGES[@]}"
+        
+        for pkg in "${PACKAGES[@]}"; do
+          echo "编译包: $pkg"
+          make package/$pkg/compile -j2 || echo "编译 $pkg 失败，继续..."
+        done
 
-          # Passwall2 主包
-          make package/luci-app-passwall2/compile V=s
-          make package/luci-app-passwall2/install V=s
+    - name: Collect and Upload
+      run: |
+        cd openwrt
+        
+        # 收集所有包
+        mkdir -p ../output-packages
+        find bin/packages -name "*.ipk" -exec cp {} ../output-packages/ \;
+        
+        echo "编译完成的包:"
+        ls -la ../output-packages/
+        echo "PACKAGES_DIR=$(pwd)/../output-packages" >> $GITHUB_ENV
 
-          # Passwall2 依赖链
-          make package/xray-core/compile V=s
-          make package/xray-core/install V=s
-          make package/chinadns-ng/compile V=s
-          make package/chinadns-ng/install V=s
-          make package/haproxy/compile V=s
-          make package/haproxy/install V=s
-          make package/v2ray-geodata/compile V=s
-          make package/v2ray-geodata/install V=s
+    - name: Upload Packages Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: custom-packages
+        path: ${{ env.PACKAGES_DIR }}/*
+        retention-days: 30
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: docker-passwall2-full-sl3000
-          path: |
-            openwrt-sdk/bin/packages/aarch64_cortex-a53/*/docker*.ipk
-            openwrt-sdk/bin/packages/aarch64_cortex-a53/*/luci-app-passwall2*.ipk
-            openwrt-sdk/bin/packages/aarch64_cortex-a53/*/xray-core*.ipk
-            openwrt-sdk/bin/packages/aarch64_cortex-a53/*/chinadns-ng*.ipk
-            openwrt-sdk/bin/packages/aarch64_cortex-a53/*/haproxy*.ipk
-            openwrt-sdk/bin/packages/aarch64_cortex-a53/*/v2ray-geodata*.ipk
+    - name: Create Packages Release
+      uses: softprops/action-gh-release@v2
+      if: success()
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        files: ${{ env.PACKAGES_DIR }}/*
+        tag_name: packages-$(date +%Y%m%d-%H%M)
+        name: Custom Packages $(date +%Y-%m-%d)
+        body: |
+          # 自定义编译的 OpenWrt 软件包
+          
+          编译时间: $(date)
+          包含的包: ${{ github.event.inputs.package_list }}
+          
+          这些包针对以下平台编译:
+          - 架构: aarch64_cortex-a53
+          - 目标: Mediatek MT7981
+          - 设备: 司洛 SL-3000
+        draft: false
+        prerelease: false
