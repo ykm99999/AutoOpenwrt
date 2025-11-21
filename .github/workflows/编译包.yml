@@ -20,7 +20,7 @@ jobs:
           libncurses5-dev zlib1g-dev gawk gettext flex bison \
           python3 rsync unzip wget
 
-    - name: 克隆源码
+    - name: 克隆源码并初始化 feeds
       run: |
         git clone https://github.com/padavanonly/immortalwrt-mt798x.git openwrt
         cd openwrt
@@ -28,22 +28,47 @@ jobs:
         ./scripts/feeds install -a
         make defconfig
 
-    - name: 编译工具链
+    - name: 编译工具链并显式构建 libdeflate
       run: |
         cd openwrt
-        make tools/compile -j1 V=s
-        make toolchain/compile -j1 V=s
+        make tools/libdeflate/clean || true
+        make tools/libdeflate/compile V=s -j1 || true
+        make tools/compile V=s -j1
+        make toolchain/compile V=s -j1
+        # 如果仍未生成，则提供兼容回退垫片
+        if [ ! -x staging_dir/host/bin/libdeflate-gzip ]; then
+          echo "libdeflate-gzip 未生成，创建回退垫片到系统 gzip"
+          mkdir -p staging_dir/host/bin
+          cat > staging_dir/host/bin/libdeflate-gzip <<'EOF'
+#!/usr/bin/env bash
+exec gzip "$@"
+EOF
+          chmod +x staging_dir/host/bin/libdeflate-gzip
+        fi
+        ls -l staging_dir/host/bin/libdeflate-gzip
+
+    - name: 预清理并重新下载关键源码包
+      run: |
+        cd openwrt
+        rm -f dl/lua-5.1.5.tar.gz
+        make package/utils/lua/download V=s
+        # 清理潜在损坏的小文件
+        find dl -size -1024c -delete || true
 
     - name: 编译 Passwall2 + Docker + 依赖
       run: |
         cd openwrt
-        # 核心包
+        # 先确保 Lua host 工具就绪（LuCI 链）
         make package/utils/lua/compile V=s -j1
+
+        # Passwall2 本体
         make package/luci-app-passwall2/compile V=s -j1
-        # Docker
+
+        # Docker 及 LuCI 管理界面
         make package/feeds/packages/docker/compile V=s -j1
         make package/feeds/luci/luci-app-dockerman/compile V=s -j1
-        # Passwall2 常用依赖
+
+        # Passwall2 常用内核（按需增减）
         make package/feeds/packages/xray-core/compile V=s -j1
         make package/feeds/packages/sing-box/compile V=s -j1
         make package/feeds/packages/shadowsocks-rust/compile V=s -j1
