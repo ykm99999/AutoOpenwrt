@@ -1,4 +1,4 @@
-name: Build Passwall2 (Lua 5.3.6 Test)
+name: Build Passwall2 (Fix Lua Host)
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: 安装依赖
+    - name: Install deps
       run: |
         sudo apt-get update
         sudo apt-get install -y \
@@ -21,7 +21,7 @@ jobs:
           python3 rsync unzip wget pkg-config libtool autoconf automake \
           libreadline-dev
 
-    - name: 克隆源码并初始化 feeds
+    - name: Clone and init feeds
       run: |
         git clone https://github.com/padavanonly/immortalwrt-mt798x.git openwrt
         cd openwrt
@@ -29,23 +29,12 @@ jobs:
         ./scripts/feeds install -a
         make defconfig
 
-    - name: 替换 Lua 版本为 5.3.6
-      run: |
-        cd openwrt/package/utils/lua
-        sed -i 's/PKG_VERSION:=5.1.5/PKG_VERSION:=5.3.6/' Makefile
-        sed -i 's/lua-5.1.5/lua-5.3.6/' Makefile
-        # 下载新版本源码并更新哈希
-        cd ../../..
-        wget http://www.lua.org/ftp/lua-5.3.6.tar.gz -O dl/lua-5.3.6.tar.gz
-        HASH=$(sha256sum dl/lua-5.3.6.tar.gz | awk '{print $1}')
-        sed -i "s/PKG_HASH:=.*/PKG_HASH:=$HASH/" package/utils/lua/Makefile
-
-    - name: 编译工具链并确保 libdeflate-gzip 存在
+    - name: Build libdeflate and provide fallback
       run: |
         cd openwrt
         make tools/libdeflate/{clean,compile,install} V=s -j1
         if [ ! -x staging_dir/host/bin/libdeflate-gzip ]; then
-          echo "libdeflate-gzip 未生成，创建回退垫片到系统 gzip"
+          echo "libdeflate-gzip fallback to system gzip"
           mkdir -p staging_dir/host/bin
           cat > staging_dir/host/bin/libdeflate-gzip <<'EOF'
 #!/usr/bin/env bash
@@ -55,25 +44,27 @@ EOF
         fi
         ls -l staging_dir/host/bin/libdeflate-gzip
 
-    - name: 清理并重新下载 Lua 包
+    - name: Clean and re-download Lua
       run: |
         cd openwrt
-        rm -f dl/lua-5.1.5.tar.gz
+        rm -f dl/lua-*.tar.gz
         make package/utils/lua/{clean,download} V=s
+        # remove suspicious tiny files
         find dl -size -1024c -delete || true
+        # quick gzip integrity test if 5.1.5 is used
+        if [ -f dl/lua-5.1.5.tar.gz ]; then gzip -t dl/lua-5.1.5.tar.gz || exit 1; fi
 
-    - name: 编译 Lua + Passwall2
+    - name: Compile Lua host then Passwall2
       run: |
         cd openwrt
-        # Lua host 工具
+        make tools/compile V=s -j1
+        make toolchain/compile V=s -j1
         make package/utils/lua/{clean,compile} V=s -j1
-
-        # Passwall2 本体
         make package/luci-app-passwall2/{clean,compile} V=s -j1
 
-    - name: 上传 ipk 包
+    - name: Upload ipk
       uses: actions/upload-artifact@v4
       with:
-        name: Passwall2_IPK_Lua53
+        name: Passwall2_IPK
         path: openwrt/bin/packages/*/*/*.ipk
         retention-days: 7
