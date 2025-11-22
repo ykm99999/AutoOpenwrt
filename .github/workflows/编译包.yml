@@ -1,113 +1,68 @@
-name: Build Passwall2 + Docker Packages
+name: Build Passwall2 (Lua Test)
 
 on:
   workflow_dispatch:
 
-env:
-  OPENWRT_BRANCH: main  # 指定明确的分支
-
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 240
+    timeout-minutes: 120
 
     steps:
     - name: Checkout
       uses: actions/checkout@v4
 
-    - name: 安装完整依赖
+    - name: 安装依赖
       run: |
         sudo apt-get update
         sudo apt-get install -y \
           build-essential ccache cmake git make libssl-dev \
           libncurses5-dev zlib1g-dev gawk gettext flex bison \
           python3 rsync unzip wget pkg-config libtool autoconf automake \
-          libreadline-dev libjson-c-dev libubus-dev libubox-dev \
-          libpcre2-dev libev-dev libmbedtls-dev libsodium-dev \
-          libc-ares-dev libpcre3-dev upx
+          libreadline-dev
 
-    - name: 设置ccache缓存
-      uses: actions/cache@v3
-      with:
-        path: ~/.ccache
-        key: ${{ runner.os }}-ccache-${{ hashFiles('**/Makefile') }}
-        restore-keys: |
-          ${{ runner.os }}-ccache-
-
-    - name: 克隆源码
+    - name: 克隆源码并初始化 feeds
       run: |
-        git clone -b ${{ env.OPENWRT_BRANCH }} \
-          https://github.com/padavanonly/immortalwrt-mt798x.git openwrt
-
-    - name: 初始配置
-      run: |
+        git clone https://github.com/padavanonly/immortalwrt-mt798x.git openwrt
         cd openwrt
         ./scripts/feeds update -a
         ./scripts/feeds install -a
-        
-        # 基础配置
         make defconfig
-        
-        # 添加必要包到配置
-        ./scripts/feeds install libubox
-        ./scripts/feeds install libuci
 
-    - name: 编译工具链
+    - name: 编译工具链并确保 libdeflate-gzip 存在
       run: |
         cd openwrt
-        # 先编译基础工具链
-        make tools/compile -j$(nproc) V=0
-        make toolchain/compile -j$(nproc) V=0
-        
-        # 编译libdeflate
-        if ! make tools/libdeflate/compile V=s -j1; then
-          echo "libdeflate编译失败，使用系统gzip回退"
+        make tools/libdeflate/{clean,compile,install} V=s -j1
+        if [ ! -x staging_dir/host/bin/libdeflate-gzip ]; then
+          echo "libdeflate-gzip 未生成，创建回退垫片到系统 gzip"
           mkdir -p staging_dir/host/bin
-          ln -sf $(which gzip) staging_dir/host/bin/libdeflate-gzip
+          cat > staging_dir/host/bin/libdeflate-gzip <<'EOF'
+#!/usr/bin/env bash
+exec gzip "$@"
+EOF
+          chmod +x staging_dir/host/bin/libdeflate-gzip
         fi
+        ls -l staging_dir/host/bin/libdeflate-gzip
 
-    - name: 编译核心依赖
+    - name: 清理并重新下载 Lua 包
       run: |
         cd openwrt
-        # 按依赖顺序编译
-        make package/utils/lua/compile V=s -j$(nproc)
-        make package/libs/libubox/compile V=s -j$(nproc)
-        make package/network/utils/uci/compile V=s -j$(nproc)
+        rm -f dl/lua-5.1.5.tar.gz
+        make package/utils/lua/{clean,download} V=s
+        find dl -size -1024c -delete || true
 
-    - name: 编译网络核心组件
+    - name: 编译 Lua + Passwall2
       run: |
         cd openwrt
-        make package/feeds/packages/shadowsocks-rust/compile V=s -j$(nproc)
-        make package/feeds/packages/xray-core/compile V=s -j$(nproc) 
-        make package/feeds/packages/sing-box/compile V=s -j$(nproc)
+        # Lua host 工具
+        make package/utils/lua/{clean,compile} V=s -j1
 
-    - name: 编译Docker相关
-      run: |
-        cd openwrt
-        make package/feeds/packages/docker/compile V=s -j$(nproc)
-        make package/feeds/luci/luci-app-dockerman/compile V=s -j$(nproc)
+        # Passwall2 本体
+        make package/luci-app-passwall2/{clean,compile} V=s -j1
 
-    - name: 编译Passwall2
-      run: |
-        cd openwrt
-        make package/luci-app-passwall2/compile V=s -j$(nproc)
-
-    - name: 验证并上传IPK包
-      run: |
-        cd openwrt
-        # 检查生成的IPK文件
-        find bin/packages -name "*.ipk" | head -10
-        ipk_count=$(find bin/packages -name "*.ipk" | wc -l)
-        echo "生成 $ipk_count 个IPK包"
-        
-        if [ $ipk_count -eq 0 ]; then
-          echo "错误：没有生成任何IPK包"
-          exit 1
-        fi
-
-    - name: 上传构建产物
+    - name: 上传 ipk 包
       uses: actions/upload-artifact@v4
       with:
-        name: Passwall2_Docker_IPK
+        name: Passwall2_IPK
         path: openwrt/bin/packages/*/*/*.ipk
         retention-days: 7
