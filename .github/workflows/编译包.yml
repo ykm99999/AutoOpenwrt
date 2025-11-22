@@ -18,7 +18,8 @@ jobs:
         sudo apt-get install -y \
           build-essential ccache cmake git make libssl-dev \
           libncurses5-dev zlib1g-dev gawk gettext flex bison \
-          python3 rsync unzip wget pkg-config libtool autoconf automake
+          python3 rsync unzip wget pkg-config libtool autoconf automake \
+          libreadline-dev
 
     - name: 克隆源码并初始化 feeds
       run: |
@@ -46,20 +47,20 @@ EOF
         fi
         ls -l staging_dir/host/bin/libdeflate-gzip
 
-    - name: 预清理并重新下载关键源码包
+    - name: 预清理并重新下载 Lua 包
       run: |
         cd openwrt
         rm -f dl/lua-5.1.5.tar.gz
-        make package/utils/lua/download V=s
+        make package/utils/lua/{clean,download} V=s
         find dl -size -1024c -delete || true
 
     - name: 编译 Passwall2 + Docker + 依赖
       run: |
         cd openwrt
-        # 清理并编译 Lua host 工具
+        # Lua host 工具（必须先编译成功）
         make package/utils/lua/{clean,compile} V=s -j1
 
-        # Passwall2 本体（详细日志）
+        # Passwall2 本体
         make package/luci-app-passwall2/{clean,compile} V=s -j1
 
         # Docker 及 LuCI 管理界面
