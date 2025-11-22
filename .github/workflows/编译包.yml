@@ -1,4 +1,4 @@
-name: Build Passwall2 (Lua Test)
+name: Build Passwall2 (Lua 5.3.6 Test)
 
 on:
   workflow_dispatch:
@@ -28,6 +28,17 @@ jobs:
         ./scripts/feeds update -a
         ./scripts/feeds install -a
         make defconfig
+
+    - name: 替换 Lua 版本为 5.3.6
+      run: |
+        cd openwrt/package/utils/lua
+        sed -i 's/PKG_VERSION:=5.1.5/PKG_VERSION:=5.3.6/' Makefile
+        sed -i 's/lua-5.1.5/lua-5.3.6/' Makefile
+        # 下载新版本源码并更新哈希
+        cd ../../..
+        wget http://www.lua.org/ftp/lua-5.3.6.tar.gz -O dl/lua-5.3.6.tar.gz
+        HASH=$(sha256sum dl/lua-5.3.6.tar.gz | awk '{print $1}')
+        sed -i "s/PKG_HASH:=.*/PKG_HASH:=$HASH/" package/utils/lua/Makefile
 
     - name: 编译工具链并确保 libdeflate-gzip 存在
       run: |
@@ -63,6 +74,6 @@ EOF
     - name: 上传 ipk 包
       uses: actions/upload-artifact@v4
       with:
-        name: Passwall2_IPK
+        name: Passwall2_IPK_Lua53
         path: openwrt/bin/packages/*/*/*.ipk
         retention-days: 7
