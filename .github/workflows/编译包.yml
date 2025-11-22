@@ -18,7 +18,7 @@ jobs:
         sudo apt-get install -y \
           build-essential ccache cmake git make libssl-dev \
           libncurses5-dev zlib1g-dev gawk gettext flex bison \
-          python3 rsync unzip wget
+          python3 rsync unzip wget pkg-config libtool autoconf automake
 
     - name: 克隆源码并初始化 feeds
       run: |
@@ -35,7 +35,6 @@ jobs:
         make tools/libdeflate/compile V=s -j1 || true
         make tools/compile V=s -j1
         make toolchain/compile V=s -j1
-        # 如果仍未生成，则提供兼容回退垫片
         if [ ! -x staging_dir/host/bin/libdeflate-gzip ]; then
           echo "libdeflate-gzip 未生成，创建回退垫片到系统 gzip"
           mkdir -p staging_dir/host/bin
@@ -52,26 +51,25 @@ EOF
         cd openwrt
         rm -f dl/lua-5.1.5.tar.gz
         make package/utils/lua/download V=s
-        # 清理潜在损坏的小文件
         find dl -size -1024c -delete || true
 
     - name: 编译 Passwall2 + Docker + 依赖
       run: |
         cd openwrt
-        # 先确保 Lua host 工具就绪（LuCI 链）
-        make package/utils/lua/compile V=s -j1
+        # 清理并编译 Lua host 工具
+        make package/utils/lua/{clean,compile} V=s -j1
 
-        # Passwall2 本体
-        make package/luci-app-passwall2/compile V=s -j1
+        # Passwall2 本体（详细日志）
+        make package/luci-app-passwall2/{clean,compile} V=s -j1
 
         # Docker 及 LuCI 管理界面
-        make package/feeds/packages/docker/compile V=s -j1
-        make package/feeds/luci/luci-app-dockerman/compile V=s -j1
+        make package/feeds/packages/docker/{clean,compile} V=s -j1
+        make package/feeds/luci/luci-app-dockerman/{clean,compile} V=s -j1
 
-        # Passwall2 常用内核（按需增减）
-        make package/feeds/packages/xray-core/compile V=s -j1
-        make package/feeds/packages/sing-box/compile V=s -j1
-        make package/feeds/packages/shadowsocks-rust/compile V=s -j1
+        # Passwall2 常用内核
+        make package/feeds/packages/xray-core/{clean,compile} V=s -j1
+        make package/feeds/packages/sing-box/{clean,compile} V=s -j1
+        make package/feeds/packages/shadowsocks-rust/{clean,compile} V=s -j1
 
     - name: 上传 ipk 包
       uses: actions/upload-artifact@v4
