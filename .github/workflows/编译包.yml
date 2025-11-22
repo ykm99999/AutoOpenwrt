@@ -1,47 +1,77 @@
-include $(TOPDIR)/rules.mk
+name: Build Passwall2 + Docker Packages
 
-PKG_NAME:=lua
-PKG_VERSION:=5.3.6
-PKG_RELEASE:=1
+on:
+  workflow_dispatch:
 
-PKG_SOURCE:=lua-$(PKG_VERSION).tar.gz
-PKG_SOURCE_URL:=http://www.lua.org/ftp/
-PKG_HASH:=f3f4d7d5d3d3a5b8a7c6f2e7f3f4d7d5d3d3a5b8a7c6f2e7f3f4d7d5d3d3a5b8  # ← 需要替换成真实 SHA256
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
 
-PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
 
-include $(INCLUDE_DIR)/host-build.mk
-include $(INCLUDE_DIR)/package.mk
+    - name: 安装依赖
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential ccache cmake git make libssl-dev \
+          libncurses5-dev zlib1g-dev gawk gettext flex bison \
+          python3 rsync unzip wget pkg-config libtool autoconf automake \
+          libreadline-dev
 
-define Package/lua
-  SECTION:=lang
-  CATEGORY:=Languages
-  TITLE:=Lua programming language
-  URL:=http://www.lua.org/
-endef
+    - name: 克隆源码并初始化 feeds
+      run: |
+        git clone https://github.com/padavanonly/immortalwrt-mt798x.git openwrt
+        cd openwrt
+        ./scripts/feeds update -a
+        ./scripts/feeds install -a
+        make defconfig
 
-define Package/lua/description
-  Lua is a powerful, efficient, lightweight, embeddable scripting language.
-endef
+    - name: 编译工具链并确保 libdeflate-gzip 存在
+      run: |
+        cd openwrt
+        make tools/libdeflate/{clean,compile,install} V=s -j1
+        if [ ! -x staging_dir/host/bin/libdeflate-gzip ]; then
+          echo "libdeflate-gzip 未生成，创建回退垫片到系统 gzip"
+          mkdir -p staging_dir/host/bin
+          cat > staging_dir/host/bin/libdeflate-gzip <<'EOF'
+#!/usr/bin/env bash
+exec gzip "$@"
+EOF
+          chmod +x staging_dir/host/bin/libdeflate-gzip
+        fi
+        ls -l staging_dir/host/bin/libdeflate-gzip
 
-define Build/Configure
-	$(call Build/Configure/Default, \
-		--prefix=$(PKG_INSTALL_DIR)/usr \
-	)
-endef
+    - name: 预清理并重新下载 Lua 包
+      run: |
+        cd openwrt
+        rm -f dl/lua-5.1.5.tar.gz
+        make package/utils/lua/{clean,download} V=s
+        find dl -size -1024c -delete || true
 
-define Build/Compile
-	$(MAKE) -C $(PKG_BUILD_DIR) \
-		CC="$(TARGET_CC)" \
-		AR="$(TARGET_AR)" \
-		RANLIB="$(TARGET_RANLIB)" \
-		linux
-endef
+    - name: 编译 Passwall2 + Docker + 依赖
+      run: |
+        cd openwrt
+        # Lua host 工具
+        make package/utils/lua/{clean,compile} V=s -j1
 
-define Package/lua/install
-	$(INSTALL_DIR) $(1)/usr/bin
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/src/lua $(1)/usr/bin/
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/src/luac $(1)/usr/bin/
-endef
+        # Passwall2 本体
+        make package/luci-app-passwall2/{clean,compile} V=s -j1
 
-$(eval $(call BuildPackage,lua))
+        # Docker 及 LuCI 管理界面
+        make package/feeds/packages/docker/{clean,compile} V=s -j1
+        make package/feeds/luci/luci-app-dockerman/{clean,compile} V=s -j1
+
+        # Passwall2 常用内核
+        make package/feeds/packages/xray-core/{clean,compile} V=s -j1
+        make package/feeds/packages/sing-box/{clean,compile} V=s -j1
+        make package/feeds/packages/shadowsocks-rust/{clean,compile} V=s -j1
+
+    - name: 上传 ipk 包
+      uses: actions/upload-artifact@v4
+      with:
+        name: Passwall2_Docker_IPK
+        path: openwrt/bin/packages/*/*/*.ipk
+        retention-days: 7
