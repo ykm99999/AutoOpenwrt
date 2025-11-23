@@ -43,8 +43,11 @@ jobs:
         run: |
           echo "src-git passwall2 https://github.com/xiaorouji/openwrt-passwall2" >> feeds.conf.default
           echo "src-git pwpackages https://github.com/xiaorouji/openwrt-passwall-packages" >> feeds.conf.default
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
+          ./scripts/feeds update passwall2
+          ./scripts/feeds update pwpackages
+          ./scripts/feeds install luci-app-passwall2
+          ./scripts/feeds install sing-box
+          ./scripts/feeds install xray-core
 
       - name: Config packages
         working-directory: sdk
