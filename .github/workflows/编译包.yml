@@ -50,6 +50,9 @@ jobs:
 
           ./scripts/feeds install luci-base
           ./scripts/feeds install luci-compat
+          ./scripts/feeds install luci-lib-jsonc
+          ./scripts/feeds install luci-lib-ip
+          ./scripts/feeds install luci-lib-nixio
           ./scripts/feeds install csstidy
           ./scripts/feeds install luci-app-passwall2
           ./scripts/feeds install sing-box
@@ -67,6 +70,11 @@ jobs:
       - name: Build only needed packages
         working-directory: sdk
         run: |
+          make package/luci-base/compile V=s -j$(nproc)
+          make package/luci-compat/compile V=s -j$(nproc)
+          make package/luci-lib-jsonc/compile V=s -j$(nproc)
+          make package/luci-lib-ip/compile V=s -j$(nproc)
+          make package/luci-lib-nixio/compile V=s -j$(nproc)
           make package/csstidy/compile V=s -j$(nproc)
           make package/luci-app-passwall2/compile V=s -j$(nproc)
           make package/sing-box/compile V=s -j$(nproc)
