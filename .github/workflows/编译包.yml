@@ -1,62 +1,22 @@
-name: Build passwall2 with sing-box & xray
-
-on:
-  workflow_dispatch:
-    inputs:
-      target:
-        description: 'OpenWrt target (e.g., ramips/mt7621)'
-        required: true
-        default: 'ramips/mt7621'
-      openwrt_version:
-        description: 'OpenWrt release (e.g., 23.05.3)'
-        required: true
-        default: '23.05.3'
-
-env:
-  TZ: Asia/Shanghai
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install build deps
+- name: Install build deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential gawk unzip wget git \
-            libncurses5-dev zlib1g-dev libssl-dev python3 rsync
-
-      - name: Download SDK
-        run: |
-          VERSION=${{ github.event.inputs.openwrt_version }}
-          TARGET=${{ github.event.inputs.target }}
-          BASE="https://downloads.openwrt.org/releases/${VERSION}/targets/${TARGET}/"
-          SDK_FILE=$(curl -sL ${BASE} | grep -o 'openwrt-sdk[^"]*Linux-x86_64.tar.xz' | head -n1)
-          wget ${BASE}${SDK_FILE} -O sdk.tar.xz
-          mkdir sdk && tar -xf sdk.tar.xz -C sdk --strip-components=1
+          sudo apt-get install -y \
+            build-essential gawk unzip wget git libncurses5-dev zlib1g-dev libssl-dev \
+            python3 perl rsync file pkg-config gettext xsltproc ccache cmake ninja-build
 
       - name: Setup feeds
         working-directory: sdk
         run: |
+          # 可选：pin luci 到 SDK 对应分支，避免不匹配
+          sed -i 's#^src-git luci .*#src-git luci https://github.com/openwrt/luci;openwrt-23.05#' feeds.conf.default
           echo "src-git passwall2 https://github.com/xiaorouji/openwrt-passwall2" >> feeds.conf.default
           echo "src-git pwpackages https://github.com/xiaorouji/openwrt-passwall-packages" >> feeds.conf.default
 
-          ./scripts/feeds update luci
-          ./scripts/feeds update passwall2
-          ./scripts/feeds update pwpackages
-
-          ./scripts/feeds install luci-base
-          ./scripts/feeds install luci-compat
-          ./scripts/feeds install luci-lib-jsonc
-          ./scripts/feeds install luci-lib-ip
-          ./scripts/feeds install luci-lib-nixio
-          ./scripts/feeds install csstidy
-          ./scripts/feeds install luci-app-passwall2
-          ./scripts/feeds install sing-box
-          ./scripts/feeds install xray-core
+          ./scripts/feeds clean
+          ./scripts/feeds update luci passwall2 pwpackages
+          ./scripts/feeds install luci-base luci-compat luci-lib-jsonc luci-lib-ip luci-lib-nixio csstidy
+          ./scripts/feeds install luci-app-passwall2 sing-box xray-core
 
       - name: Config packages
         working-directory: sdk
@@ -65,29 +25,22 @@ jobs:
           echo "CONFIG_PACKAGE_sing-box=y" >> .config
           echo "CONFIG_PACKAGE_xray-core=y" >> .config
           echo "CONFIG_PACKAGE_csstidy=y" >> .config
+          echo "CONFIG_LUCI_SRCDIET=n" >> .config
           make defconfig
 
-      - name: Build only needed packages
+      - name: Build luCI base chain first (single job)
         working-directory: sdk
         run: |
-          make package/luci-base/compile V=s -j$(nproc)
-          make package/luci-compat/compile V=s -j$(nproc)
-          make package/luci-lib-jsonc/compile V=s -j$(nproc)
-          make package/luci-lib-ip/compile V=s -j$(nproc)
-          make package/luci-lib-nixio/compile V=s -j$(nproc)
-          make package/csstidy/compile V=s -j$(nproc)
+          make package/luci-base/compile V=s -j1 || exit 1
+          make package/luci-compat/compile V=s -j1 || exit 1
+          make package/luci-lib-jsonc/compile V=s -j1 || exit 1
+          make package/luci-lib-ip/compile V=s -j1 || exit 1
+          make package/luci-lib-nixio/compile V=s -j1 || exit 1
+          make package/csstidy/compile V=s -j1 || exit 1
+
+      - name: Build passwall2 and cores
+        working-directory: sdk
+        run: |
           make package/luci-app-passwall2/compile V=s -j$(nproc)
           make package/sing-box/compile V=s -j$(nproc)
           make package/xray-core/compile V=s -j$(nproc)
-
-      - name: Collect artifacts
-        working-directory: sdk
-        run: |
-          mkdir -p $GITHUB_WORKSPACE/artifacts
-          find bin/packages -type f -name '*.ipk' -exec cp {} $GITHUB_WORKSPACE/artifacts/ \;
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: passwall2-singbox-xray
-          path: artifacts
