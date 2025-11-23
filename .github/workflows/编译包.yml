@@ -49,11 +49,9 @@ jobs:
       - name: Config packages
         working-directory: sdk
         run: |
-          cat > .config <<EOF
-          CONFIG_PACKAGE_luci-app-passwall2=y
-          CONFIG_PACKAGE_sing-box=y
-          CONFIG_PACKAGE_xray-core=y
-          EOF
+          echo "CONFIG_PACKAGE_luci-app-passwall2=y" > .config
+          echo "CONFIG_PACKAGE_sing-box=y" >> .config
+          echo "CONFIG_PACKAGE_xray-core=y" >> .config
           make defconfig
 
       - name: Build
