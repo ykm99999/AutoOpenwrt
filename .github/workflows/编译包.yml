@@ -41,10 +41,16 @@ jobs:
       - name: Setup feeds
         working-directory: sdk
         run: |
+          echo "src-git luci https://github.com/openwrt/luci" >> feeds.conf.default
           echo "src-git passwall2 https://github.com/xiaorouji/openwrt-passwall2" >> feeds.conf.default
           echo "src-git pwpackages https://github.com/xiaorouji/openwrt-passwall-packages" >> feeds.conf.default
+
+          ./scripts/feeds update luci
           ./scripts/feeds update passwall2
           ./scripts/feeds update pwpackages
+
+          ./scripts/feeds install luci-base
+          ./scripts/feeds install luci-compat
           ./scripts/feeds install luci-app-passwall2
           ./scripts/feeds install sing-box
           ./scripts/feeds install xray-core
