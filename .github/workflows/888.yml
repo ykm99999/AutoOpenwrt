@@ -42,20 +42,22 @@ jobs:
       - name: Setup feeds
         working-directory: sdk
         run: |
-          # 可选：pin luci 到 SDK 对应分支，避免不匹配
           sed -i 's#^src-git luci .*#src-git luci https://github.com/openwrt/luci;openwrt-23.05#' feeds.conf.default
           echo "src-git passwall2 https://github.com/xiaorouji/openwrt-passwall2" >> feeds.conf.default
           echo "src-git pwpackages https://github.com/xiaorouji/openwrt-passwall-packages" >> feeds.conf.default
 
           ./scripts/feeds clean
           ./scripts/feeds update luci passwall2 pwpackages
+          ./scripts/feeds install lua liblua
           ./scripts/feeds install luci-base luci-compat luci-lib-jsonc luci-lib-ip luci-lib-nixio csstidy
           ./scripts/feeds install luci-app-passwall2 sing-box xray-core
 
       - name: Config packages
         working-directory: sdk
         run: |
-          echo "CONFIG_PACKAGE_luci-app-passwall2=y" > .config
+          echo "CONFIG_PACKAGE_lua=y" > .config
+          echo "CONFIG_PACKAGE_liblua=y" >> .config
+          echo "CONFIG_PACKAGE_luci-app-passwall2=y" >> .config
           echo "CONFIG_PACKAGE_sing-box=y" >> .config
           echo "CONFIG_PACKAGE_xray-core=y" >> .config
           echo "CONFIG_PACKAGE_csstidy=y" >> .config
@@ -65,6 +67,8 @@ jobs:
       - name: Build luCI base chain first (single job)
         working-directory: sdk
         run: |
+          make package/lua/compile V=s -j1 || exit 1
+          make package/liblua/compile V=s -j1 || exit 1
           make package/luci-base/compile V=s -j1 || exit 1
           make package/luci-compat/compile V=s -j1 || exit 1
           make package/luci-lib-jsonc/compile V=s -j1 || exit 1
