@@ -30,7 +30,9 @@ jobs:
         run: |
           TARGET=${{ github.event.inputs.target }}
           BASE="https://downloads.openwrt.org/snapshots/targets/${TARGET}/"
-          SDK_FILE=$(curl -sL ${BASE} | grep -o 'openwrt-sdk[^"]*Linux-x86_64.tar.xz' | head -n1)
+          # 抓取真实 SDK 文件名
+          SDK_FILE=$(curl -s ${BASE} | grep -oE 'openwrt-sdk-[^"]*Linux-x86_64.tar.xz' | head -n1)
+          echo "SDK_FILE=${SDK_FILE}"
           wget ${BASE}${SDK_FILE} -O sdk.tar.xz
           mkdir sdk && tar -xf sdk.tar.xz -C sdk --strip-components=1
 
