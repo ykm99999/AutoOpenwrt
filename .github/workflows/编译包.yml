@@ -54,9 +54,12 @@ jobs:
           echo "CONFIG_PACKAGE_xray-core=y" >> .config
           make defconfig
 
-      - name: Build
+      - name: Build only needed packages
         working-directory: sdk
-        run: make -j$(nproc) V=s
+        run: |
+          make package/luci-app-passwall2/compile V=s -j$(nproc)
+          make package/sing-box/compile V=s -j$(nproc)
+          make package/xray-core/compile V=s -j$(nproc)
 
       - name: Collect artifacts
         working-directory: sdk
