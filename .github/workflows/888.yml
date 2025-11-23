@@ -1,67 +1,31 @@
-name: Build passwall2 with sing-box & xray
-
-on:
-  workflow_dispatch:
-
-env:
-  TZ: Asia/Shanghai
-
-jobs:
-  build:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install build deps
+- name: Download snapshot SDK
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential gawk unzip wget git libncurses5-dev zlib1g-dev libssl-dev \
-            python3 perl rsync file pkg-config gettext xsltproc ccache cmake ninja-build
+          set -e
+          TARGET="ramips/mt7621"
+          BASE="https://downloads.openwrt.org/snapshots/targets/${TARGET}/"
 
-      - name: Download snapshot SDK (ramips/mt7621)
-        run: |
-          BASE="https://downloads.openwrt.org/snapshots/targets/ramips/mt7621/"
-          SDK_FILE="openwrt-sdk-ramips-mt7621_gcc-12.3.0_musl.Linux-x86_64.tar.xz"
-          echo "Downloading ${BASE}${SDK_FILE}"
-          wget ${BASE}${SDK_FILE} -O sdk.tar.xz
-          mkdir sdk && tar -xf sdk.tar.xz -C sdk --strip-components=1
+          # 尝试从目录索引解析 SDK 文件名
+          SDK_FILE="$(curl -fsSL ${BASE} | grep -oE 'openwrt-sdk-[^"]*Linux-x86_64\.tar\.xz' | head -n1 || true)"
+          echo "Parsed from index: SDK_FILE='${SDK_FILE}'"
 
-      - name: Setup feeds
-        working-directory: sdk
-        run: |
-          echo "src-git passwall2 https://github.com/xiaorouji/openwrt-passwall2" >> feeds.conf.default
-          echo "src-git pwpackages https://github.com/xiaorouji/openwrt-passwall-packages" >> feeds.conf.default
+          # 如果失败，尝试从 sha256sums 解析
+          if [ -z "${SDK_FILE}" ]; then
+            echo "Index parse failed, try sha256sums..."
+            SDK_FILE="$(curl -fsSL ${BASE}sha256sums | grep -oE 'openwrt-sdk-[^ ]*Linux-x86_64\.tar\.xz' | head -n1 || true)"
+            echo "Parsed from sha256sums: SDK_FILE='${SDK_FILE}'"
+          fi
 
-          ./scripts/feeds clean
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
+          # 仍失败则明确报错退出
+          if [ -z "${SDK_FILE}" ]; then
+            echo "ERROR: No SDK tarball found under ${BASE}"
+            echo "Possible causes:"
+            echo "  - Snapshot for target '${TARGET}' has not published SDK today."
+            echo "  - Directory layout changed or index not listing SDK."
+            exit 1
+          fi
 
-      - name: Config packages
-        working-directory: sdk
-        run: |
-          echo "CONFIG_PACKAGE_luci-app-passwall2=y" > .config
-          echo "CONFIG_PACKAGE_sing-box=y" >> .config
-          echo "CONFIG_PACKAGE_xray-core=y" >> .config
-          make defconfig
-
-      - name: Build packages
-        working-directory: sdk
-        run: |
-          make package/luci-app-passwall2/compile V=s -j$(nproc)
-          make package/sing-box/compile V=s -j$(nproc)
-          make package/xray-core/compile V=s -j$(nproc)
-
-      - name: Collect artifacts
-        working-directory: sdk
-        run: |
-          mkdir -p $GITHUB_WORKSPACE/artifacts
-          find bin/packages -type f -name '*.ipk' -exec cp {} $GITHUB_WORKSPACE/artifacts/ \;
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: passwall2-singbox-xray
-          path: artifacts
+          echo "Downloading: ${BASE}${SDK_FILE}"
+          wget -q ${BASE}${SDK_FILE} -O sdk.tar.xz
+          mkdir -p sdk
+          tar -xf sdk.tar.xz -C sdk --strip-components=1
+          echo "SDK unpacked to ./sdk"
