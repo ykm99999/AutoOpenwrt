@@ -50,6 +50,7 @@ jobs:
 
           ./scripts/feeds install luci-base
           ./scripts/feeds install luci-compat
+          ./scripts/feeds install csstidy
           ./scripts/feeds install luci-app-passwall2
           ./scripts/feeds install sing-box
           ./scripts/feeds install xray-core
@@ -60,11 +61,13 @@ jobs:
           echo "CONFIG_PACKAGE_luci-app-passwall2=y" > .config
           echo "CONFIG_PACKAGE_sing-box=y" >> .config
           echo "CONFIG_PACKAGE_xray-core=y" >> .config
+          echo "CONFIG_PACKAGE_csstidy=y" >> .config
           make defconfig
 
       - name: Build only needed packages
         working-directory: sdk
         run: |
+          make package/csstidy/compile V=s -j$(nproc)
           make package/luci-app-passwall2/compile V=s -j$(nproc)
           make package/sing-box/compile V=s -j$(nproc)
           make package/xray-core/compile V=s -j$(nproc)
