@@ -2,11 +2,6 @@ name: Build passwall2 with sing-box & xray
 
 on:
   workflow_dispatch:
-    inputs:
-      target:
-        description: 'OpenWrt target (e.g., ramips/mt7621)'
-        required: true
-        default: 'ramips/mt7621'
 
 env:
   TZ: Asia/Shanghai
@@ -26,13 +21,11 @@ jobs:
             build-essential gawk unzip wget git libncurses5-dev zlib1g-dev libssl-dev \
             python3 perl rsync file pkg-config gettext xsltproc ccache cmake ninja-build
 
-      - name: Download snapshot SDK
+      - name: Download snapshot SDK (ramips/mt7621)
         run: |
-          TARGET=${{ github.event.inputs.target }}
-          BASE="https://downloads.openwrt.org/snapshots/targets/${TARGET}/"
-          # 抓取真实 SDK 文件名
-          SDK_FILE=$(curl -s ${BASE} | grep -oE 'openwrt-sdk-[^"]*Linux-x86_64.tar.xz' | head -n1)
-          echo "SDK_FILE=${SDK_FILE}"
+          BASE="https://downloads.openwrt.org/snapshots/targets/ramips/mt7621/"
+          SDK_FILE="openwrt-sdk-ramips-mt7621_gcc-12.3.0_musl.Linux-x86_64.tar.xz"
+          echo "Downloading ${BASE}${SDK_FILE}"
           wget ${BASE}${SDK_FILE} -O sdk.tar.xz
           mkdir sdk && tar -xf sdk.tar.xz -C sdk --strip-components=1
 
