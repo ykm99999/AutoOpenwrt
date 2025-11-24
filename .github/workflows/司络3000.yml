@@ -1,28 +1,13 @@
-name: 司络SL-3000 EMMC 固件编译
+name: 司络SL-3000 EMMC 固件编译 (优化版)
 
 on:
-  repository_dispatch:
   workflow_dispatch:
-    inputs:
-      skip_upload:
-        description: '跳过固件上传'
-        required: false
-        default: false
-        type: boolean
-
-permissions:
-  contents: write
 
 env:
   REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x-24.10
   REPO_BRANCH: 2410
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: sl3000.config
-  DIY_P1_SH: diy-part1.sh
-  DIY_P2_SH: diy-part2.sh
-  UPLOAD_BIN_DIR: false
-  UPLOAD_FIRMWARE: true
-  UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
   CCACHE_DIR: /workdir/.ccache
 
@@ -35,234 +20,77 @@ jobs:
     - name: 检查代码
       uses: actions/checkout@v4
 
-    - name: 初始化环境
-      env:
-        DEBIAN_FRONTEND: noninteractive
+    - name: 初始化环境并清理磁盘
       run: |
-        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
-        sudo -E apt-get -qq update
-        sudo -E apt-get -qq install \
-          ack antlr3 asciidoc autoconf automake autopoint binutils bison \
-          build-essential bzip2 ccache cmake cpio curl device-tree-compiler \
-          fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged \
-          help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev \
-          libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev \
-          libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool \
-          lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf \
-          python2.7 python3 python3-pyelftools python3-setuptools qemu-utils \
-          rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl \
-          unzip vim wget xmlto xxd zlib1g-dev jq
-        sudo -E apt-get -qq autoremove --purge
-        sudo -E apt-get -qq clean
-        sudo timedatectl set-timezone "$TZ"
+        sudo apt-get update
+        sudo apt-get install -y build-essential git wget curl unzip \
+          gawk flex gettext libssl-dev python3 rsync ccache cmake ninja-build
+        # 删除不必要的大文件和工具链
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc \
+                    /opt/hostedtoolcache /usr/lib/jvm /usr/lib/google-cloud-sdk /usr/lib/heroku
+        sudo docker image prune -a --force || true
+        sudo docker builder prune --all --force || true
+        sudo apt-get autoremove --purge -y
+        sudo apt-get clean
         sudo mkdir -p /workdir
         sudo chown $USER:$GROUPS /workdir
-
-    - name: 配置编译缓存
-      run: |
-        sudo mkdir -p $CCACHE_DIR
-        sudo chown -R $USER:$GROUPS $CCACHE_DIR
-        echo "CCACHE_DIR=$CCACHE_DIR" >> $GITHUB_ENV
-        ccache -o compression=true
-        ccache -o max_size=2G
-        ccache -s
-
-    - name: 清理磁盘空间
-      run: |
-        echo "清理磁盘空间..."
-        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-        sudo docker image prune -a --force 2>/dev/null || true
-        sudo apt-get clean
         df -hT
 
-    - name: 克隆源代码
-      id: clone
+    - name: 克隆源码
       working-directory: /workdir
       run: |
-        df -hT $PWD
-        if [ ! -d "openwrt" ]; then
-          git clone --depth=1 $REPO_URL -b $REPO_BRANCH openwrt
-          echo "clone_status=fresh" >> $GITHUB_OUTPUT
-        else
-          cd openwrt
-          git fetch --depth=1 origin $REPO_BRANCH
-          git reset --hard origin/$REPO_BRANCH
-          echo "clone_status=cached" >> $GITHUB_OUTPUT
-        fi
+        git clone --depth=1 $REPO_URL -b $REPO_BRANCH openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
-    - name: 应用自定义配置
+    - name: 应用配置
       run: |
-        if [ -e "$FEEDS_CONF" ]; then
-          cp $FEEDS_CONF openwrt/feeds.conf.default
-          echo "已应用 feeds 配置"
-        fi
-        
-        if [ -x "$DIY_P1_SH" ]; then
-          echo "执行 DIY 第一部分脚本"
-          cd openwrt
-          $GITHUB_WORKSPACE/$DIY_P1_SH
-        fi
+        cp $CONFIG_FILE openwrt/.config
 
-    - name: 更新和安装 feeds
+    - name: 更新和安装 feeds (只安装必要包)
       run: |
         cd openwrt
         ./scripts/feeds update -a
-        ./scripts/feeds install -a
+        ./scripts/feeds install -a -p luci -p packages -p passwall2 -p pwpackages
 
-    - name: 应用自定义文件和配置
-      run: |
-        if [ -d "files" ]; then
-          cp -r files openwrt/files
-          echo "已应用自定义文件"
-        fi
-        
-        if [ -e "$CONFIG_FILE" ]; then
-          cp $CONFIG_FILE openwrt/.config
-          echo "已应用配置文件"
-        fi
-        
-        if [ -x "$DIY_P2_SH" ]; then
-          echo "执行 DIY 第二部分脚本"
-          cd openwrt
-          $GITHUB_WORKSPACE/$DIY_P2_SH
-        fi
-
-    - name: 下载软件包
-      id: download
+    - name: 下载依赖并清理
       run: |
         cd openwrt
         make defconfig
-        echo "开始下载软件包..."
         make download -j$(nproc) || make download -j1
-        # 清理无效的下载文件
-        find dl -size -1024c -exec rm -f {} \; 2>/dev/null || true
-        echo "下载完成"
+        # 删除无效或过大的下载文件
+        find dl -size -1024c -delete
+        find dl -size +100M -delete
+        df -hT
 
-    - name: 编译固件
-      id: compile
-      env:
-        CCACHE_DIR: ${{ env.CCACHE_DIR }}
+    - name: 编译固件 (只编译 config)
       run: |
         cd openwrt
-        echo "CPU 核心数: $(nproc)"
-        echo "开始编译..."
-        
-        # 启用编译缓存
-        export CCACHE_DIR="$CCACHE_DIR"
-        
-        # 尝试编译，失败时降级重试
-        if make -j$(nproc) ; then
-          echo "status=success" >> $GITHUB_OUTPUT
-          echo "result=编译成功" >> $GITHUB_OUTPUT
-        elif make -j1 ; then
-          echo "status=success" >> $GITHUB_OUTPUT  
-          echo "result=单线程编译成功" >> $GITHUB_OUTPUT
-        else
-          echo "尝试详细模式编译..."
-          make -j1 V=s
-          echo "status=failure" >> $GITHUB_OUTPUT
-          echo "result=编译失败" >> $GITHUB_OUTPUT
-          exit 1
-        fi
-        
-        # 获取设备名称
-        grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
-        if [ -s DEVICE_NAME ]; then
-          echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
-        else
-          echo "DEVICE_NAME=" >> $GITHUB_ENV
-        fi
-        echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+        ccache -o max_size=1G
+        make target/compile -j$(nproc)
+        make package/compile -j$(nproc)
+        make package/install -j$(nproc)
+        make package/index
+        make -j$(nproc)
+        df -hT
 
-    - name: 检查磁盘使用情况
-      if: always() && !cancelled()
-      run: df -hT
-
-    - name: 显示编译缓存统计
-      if: always() && !cancelled()
-      run: ccache -s
-
-    - name: 整理固件文件
-      id: organize
-      if: env.UPLOAD_FIRMWARE == 'true' && steps.compile.outputs.status == 'success' && !cancelled()
+    - name: 整理固件
       run: |
         cd openwrt/bin/targets/*/*
-        # 清理不必要的文件
-        rm -rf packages
-        echo "固件目录: $PWD"
-        ls -la
+        rm -rf packages *.buildinfo *.json *.manifest
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-        echo "status=success" >> $GITHUB_OUTPUT
+        df -hT
 
-    - name: 上传固件制品
+    - name: 上传固件
       uses: actions/upload-artifact@v4
-      if: steps.organize.outputs.status == 'success' && !cancelled() && !inputs.skip_upload
       with:
-        name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        name: SL3000_firmware
         path: ${{ env.FIRMWARE }}/*
         retention-days: 7
-        compression-level: 0
-
-    - name: 生成发布信息
-      id: release_info
-      if: env.UPLOAD_RELEASE == 'true' && steps.compile.outputs.status == 'success' && !cancelled() && !inputs.skip_upload
-      run: |
-        current_date=$(date +"%Y.%m.%d-%H%M")
-        echo "release_tag=$current_date" >> $GITHUB_OUTPUT
-        echo "release_name=司络SL-3000 EMMC $current_date" >> $GITHUB_OUTPUT
-        
-        # 生成发布说明
-        cat > release_body.md << EOF
-        # 司络SL-3000 EMMC 固件
-        
-        ## 编译信息
-        - **编译时间**: $(date)
-        - **设备型号**: SL-3000 (MT7981, EMMC)
-        - **编译结果**: ${{ steps.compile.outputs.result }}
-        - **源码版本**: ${{ env.REPO_BRANCH }}
-        
-        ## 固件说明
-        适用于司络SL-3000 EMMC版本的OpenWrt固件。
-        
-        ## 注意事项
-        1. 请确保设备型号匹配
-        2. 首次刷机建议备份原厂固件
-        3. 刷机有风险，操作需谨慎
-        EOF
-        echo "body_file=release_body.md" >> $GITHUB_OUTPUT
-
-    - name: 发布到 GitHub Release
-      uses: softprops/action-gh-release@v2
-      if: steps.release_info.outputs.release_tag && !inputs.skip_upload
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ steps.release_info.outputs.release_tag }}
-        name: ${{ steps.release_info.outputs.release_name }}
-        body_file: ${{ steps.release_info.outputs.body_file }}
-        files: ${{ env.FIRMWARE }}/*
-        draft: false
-        prerelease: false
-
-    - name: 清理历史工作流
-      uses: Mattraks/delete-workflow-runs@v2
-      with:
-        retain_days: 1
-        keep_minimum_runs: 2
-
-    - name: 清理旧发布
-      uses: dev-drprasad/delete-older-releases@v0.2.0
-      if: env.UPLOAD_RELEASE == 'true' && !cancelled() && !inputs.skip_upload
-      with:
-        keep_latest: 3
-        delete_tags: true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: 编译失败通知
-      if: steps.compile.outputs.status == 'failure'
+      if: failure()
       run: |
         echo "❌ 固件编译失败！"
         echo "请检查编译日志获取详细信息"
-        exit 1
+        echo "当前磁盘使用情况："
+        df -hT
