@@ -1,10 +1,7 @@
 name: Build ImmortalWrt SL3000
 
 on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
+  workflow_dispatch:   # 只允许手动触发，不会因为 push 自动运行
 
 jobs:
   build:
@@ -37,8 +34,10 @@ jobs:
         cd immortalwrt
         # 修改默认 IP
         sed -i 's/192.168.1.1/192.168.6.1/g' package/base-files/files/bin/config_generate
-        # 替换 LuCI Logo
-        cp ../logo.png package/luci-theme-bootstrap/htdocs/luci-static/bootstrap/logo.png
+        # 替换 LuCI Logo（支持 logo.jpeg）
+        if [ -f ../logo.jpeg ]; then
+          cp ../logo.jpeg package/luci-theme-bootstrap/htdocs/luci-static/bootstrap/logo.png
+        fi
         # 修改登录 Banner
         echo "Welcome to 司络 SL-3000 ImmortalWrt" > package/base-files/files/etc/banner
 
