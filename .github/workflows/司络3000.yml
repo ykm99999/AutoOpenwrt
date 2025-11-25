@@ -34,8 +34,8 @@ jobs:
         cd immortalwrt
         # 修改默认 IP
         sed -i 's/192.168.1.1/192.168.6.1/g' package/base-files/files/bin/config_generate
-        # 替换 LuCI Logo（支持 logo.jpeg）
-        if [ -f ../logo.jpeg ]; then
+        # 替换 LuCI Logo（支持 logo.jpeg，且目录存在时才执行）
+        if [ -f ../logo.jpeg ] && [ -d package/luci-theme-bootstrap/htdocs/luci-static/bootstrap ]; then
           cp ../logo.jpeg package/luci-theme-bootstrap/htdocs/luci-static/bootstrap/logo.png
         fi
         # 修改登录 Banner
