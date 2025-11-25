@@ -1,11 +1,11 @@
-name: Build SL-3000 ImmortalWrt
+name: Build SL-3000 ImmortalWrt Stable
 
 on:
   workflow_dispatch:   # ✅ 只支持手动触发，不会因保存代码自动运行
 
 env:
-  REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x-24.10
-  REPO_BRANCH: 2410
+  REPO_URL: https://github.com/immortalwrt/immortalwrt
+  REPO_BRANCH: openwrt-24.10
   CONFIG_FILE: sl3000.config
   TZ: Asia/Shanghai
 
