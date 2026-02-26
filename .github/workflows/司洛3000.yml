@@ -2,9 +2,6 @@
 # https://github.com/P3TERX/Actions-OpenWrt
 #
 # File: .github/workflows/openwrt-bulder.yml
-# Description: Build OpenWrt using GitHub Actions
-#
-# Copyright (c) 2019-2024 P3TERX <https://p3TERX.com>
 #
 
 name: 司洛SL-3000 EMMC
@@ -50,7 +47,6 @@ jobs:
     - name: Clone source code
       working-directory: /workdir
       run: |
-        df -hT $PWD
         git clone $REPO_URL -b $REPO_BRANCH openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
@@ -89,33 +85,34 @@ jobs:
       run: |
         cd openwrt
         echo -e "$(nproc) thread compile"
-        # [span_4](start_span)物理修复：必须先构建 tools 和 toolchain 否则 U-Boot 编译会因缺少 libc 或压缩工具报错[span_4](end_span)
+        # 彻底解决报错：物理确保构建工具链完整
         make tools/compile -j$(nproc) || make tools/compile -j1 V=s
         make toolchain/compile -j$(nproc) || make toolchain/compile -j1 V=s
-        # 物理生成：拉起专用救砖 DA 驱动
+        # 物理精准生成：只拉起 MTK 专用救砖引导与 DA 驱动
         make package/boot/uboot-mediatek/compile V=s -j$(nproc)
+        # 编译完整更新固件
         make -j$(nproc) || make -j1 || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
         [ -s DEVICE_NAME ] && echo "DEVICE_NAME=_$(cat DEVICE_NAME)" >> $GITHUB_ENV
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
 
-    - name: Check space usage
-      if: (!cancelled())
-      run: df -hT
-
     - name: Organize files
       id: organize
       if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
         cd openwrt/bin/targets/*/*
-        mkdir -p /tmp/RECOVERY_STUFF
-        cp -f *DA* /tmp/RECOVERY_STUFF/ 2>/dev/null || true
-        cp -f *DownloadAgent* /tmp/RECOVERY_STUFF/ 2>/dev/null || true
-        cp -f *fip* /tmp/RECOVERY_STUFF/ 2>/dev/null || true
-        cp -f *u-boot* /tmp/RECOVERY_STUFF/ 2>/dev/null || true
+        # 物理隔离救砖引导、DA 驱动以及更新固件
+        mkdir -p /tmp/COLLECT_FILES
+        cp -f *DA* /tmp/COLLECT_FILES/ 2>/dev/null || true
+        cp -f *fip* /tmp/COLLECT_FILES/ 2>/dev/null || true
+        cp -f *u-boot* /tmp/COLLECT_FILES/ 2>/dev/null || true
+        cp -f *sysupgrade.bin /tmp/COLLECT_FILES/ 2>/dev/null || true
+        
+        # 清理 packages，只保留 Release 所需文件
         rm -rf packages
-        cp -f /tmp/RECOVERY_STUFF/* . 2>/dev/null || true
+        cp -f /tmp/COLLECT_FILES/* . 2>/dev/null || true
+        
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
         echo "status=success" >> $GITHUB_OUTPUT
 
@@ -123,7 +120,7 @@ jobs:
       uses: actions/upload-artifact@main
       if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
-        name: OpenWrt_firmware${{ env.DEVICE_NAME }}$${{ env.FILE_DATE }}
+        name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
         path: ${{ env.FIRMWARE }}
 
     - name: Generate release tag
@@ -141,6 +138,6 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         files: ${{ env.FIRMWARE }}/*
-        name: ${{ env.FILE_DATE }}${{ env.DEVICE_NAME }}-含救命引导
+        name: ${{ env.FILE_DATE }}${{ env.DEVICE_NAME }}-含固件及救砖引导
         tag_name: ${{ steps.tag.outputs.release_tag }}
         body_path: release.txt
