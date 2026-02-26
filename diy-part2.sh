@@ -1,24 +1,18 @@
 #!/bin/bash
 #
-# https://github.com/P3TERX/Actions-OpenWrt
 # File name: diy-part2.sh
+# Description: 物理修复 SL-3000 U-Boot 架构冲突报错
 #
-
-# =========================================================
-# 核心修复：物理屏蔽非 SL-3000 设备，防止架构冲突报错
-# =========================================================
 
 UBOOT_MAKEFILE="package/boot/uboot-mediatek/Makefile"
 
 if [ -f "$UBOOT_MAKEFILE" ]; then
-    # 物理清除 UBOOT_TARGETS 原有定义，防止 MIPS 设备触发 ARM64 编译错误
-    # 仅保留 SL-3000 及其物理依赖
-    echo "正在执行物理修复：清理架构冲突目标并注入 SL-3000 定义..."
-    
-    # 1. 物理移除 Makefile 中原有的 UBOOT_TARGETS 累加逻辑（防止旧设备被编译）
+    echo "执行 Pre-generation Audit：正在物理清除冲突架构并注入 SL-3000..."
+
+    # 1. 物理移除 Makefile 中所有原有的 UBOOT_TARGETS 赋值行，防止编译 MIPS 设备
     sed -i '/UBOOT_TARGETS +=/d' "$UBOOT_MAKEFILE"
 
-    # 2. 注入 SL-3000 U-Boot 定义（如果不存在）
+    # 2. 注入 SL-3000 U-Boot 定义（严格保持物理结构）
     if ! grep -q "U-Boot/mt7981_sl_3000-nand" "$UBOOT_MAKEFILE"; then
         sed -i '/define U-Boot\/mt7981_jcg_q30-pro/i \
 define U-Boot/mt7981_sl_3000-nand\
@@ -47,14 +41,14 @@ endef\
 ' "$UBOOT_MAKEFILE"
     fi
 
-    # 3. 物理锁定编译目标：仅允许编译 SL-3000，解决架构死锁
+    # 3. 结果导向：强制锁定编译目标，物理隔离旧设备
     echo -e "\nUBOOT_TARGETS += mt7981_sl_3000-nand mt7981_sl_3000-emmc" >> "$UBOOT_MAKEFILE"
 fi
 
 # =========================================================
-# 原文照抄：其他补丁逻辑
+# 原文照抄原则：保持其他基础补丁不变
 # =========================================================
 sed -i 's/192.168.1.1/192.168.1.2/g' package/base-files/files/bin/config_generate
 sed -i 's/ImmortalWrt/SL-3000/g' package/base-files/files/bin/config_generate
 
-echo "diy-part2.sh 物理修复完成。"
+echo "diy-part2.sh 物理修复完成，冲突架构已隔离。"
