@@ -6,9 +6,6 @@
 #
 # Copyright (c) 2019-2024 P3TERX <https://p3terx.com>
 #
-# This is free software, licensed under the MIT License.
-# See /LICENSE for more information.
-#
 
 name: 司洛SL-3000 EMMC
 
@@ -92,6 +89,8 @@ jobs:
       run: |
         cd openwrt
         echo -e "$(nproc) thread compile"
+        # 物理生成：单独拉起 MTK 专用救砖 DA 驱动与 U-Boot
+        make package/boot/uboot-mediatek/compile V=s -j$(nproc)
         make -j$(nproc) || make -j1 || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
@@ -102,19 +101,22 @@ jobs:
       if: (!cancelled())
       run: df -hT
 
-    - name: Upload bin directory
-      uses: actions/upload-artifact@main
-      if: steps.compile.outputs.status == 'success' && env.UPLOAD_BIN_DIR == 'true'
-      with:
-        name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-        path: openwrt/bin
-
     - name: Organize files
       id: organize
       if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
         cd openwrt/bin/targets/*/*
+        # 物理隔离救命引导与 DA 驱动
+        mkdir -p /tmp/RECOVERY_STUFF
+        cp -f *DA* /tmp/RECOVERY_STUFF/ 2>/dev/null || true
+        cp -f *DownloadAgent* /tmp/RECOVERY_STUFF/ 2>/dev/null || true
+        cp -f *fip* /tmp/RECOVERY_STUFF/ 2>/dev/null || true
+        cp -f *u-boot* /tmp/RECOVERY_STUFF/ 2>/dev/null || true
+        
+        # 清理 packages，保留固件与救砖专用驱动
         rm -rf packages
+        cp -f /tmp/RECOVERY_STUFF/* . 2>/dev/null || true
+        
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
         echo "status=success" >> $GITHUB_OUTPUT
 
@@ -131,7 +133,6 @@ jobs:
       run: |
         echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
         touch release.txt
-        [ ${UPLOAD_GOFILE} = true && ${{ steps.gofile.outputs.url }} ] && echo "🔗 [GoFile](${{ steps.gofile.outputs.url }})" >> release.txt
         echo "status=success" >> $GITHUB_OUTPUT
 
     - name: 发布固件至Release
@@ -141,21 +142,6 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         files: ${{ env.FIRMWARE }}/*
-        name: ${{ env.FILE_DATE }}-${{ env.OPENWRT_NAME }}-${{ env.UPLOAD_TAG_NAME }}${{ env.WIFI_VERSION }}${{ env.EEPROM }}${{ env.BUILD_DOCKERMAN }}
+        name: ${{ env.FILE_DATE }}${{ env.DEVICE_NAME }}-含救命引导
         tag_name: ${{ steps.tag.outputs.release_tag }}
         body_path: release.txt
-
-    - name: Delete workflow runs
-      uses: Mattraks/delete-workflow-runs@main
-      with:
-        retain_days: 0
-        keep_minimum_runs: 2
-
-    - name: Remove old Releases
-      uses: dev-drprasad/delete-older-releases@master
-      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
-      with:
-        keep_latest: 3
-        delete_tags: true
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
