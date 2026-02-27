@@ -1,10 +1,11 @@
-name: 司洛SL-3000构建最终修复版
+name: SL3000-24.10源码-5.4内核构建
 
 on:
   repository_dispatch:
   workflow_dispatch:
 
 env:
+  # 物理锁定您的 5.4 内核源码仓库
   REPO_URL: https://github.com/ykm99999/54
   REPO_BRANCH: 2410
   CONFIG_FILE: sl3000.config
@@ -19,7 +20,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@main
 
-    - name: 初始化环境
+    - name: 物理环境初始化
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
@@ -30,7 +31,7 @@ jobs:
         sudo mkdir -p /workdir
         sudo chown $USER:$GROUPS /workdir
 
-    - name: 克隆源码
+    - name: 物理克隆仓库源 (ykm99999/54)
       working-directory: /workdir
       run: |
         git clone $REPO_URL -b $REPO_BRANCH openwrt
@@ -42,52 +43,52 @@ jobs:
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    - name: 加载自定义脚本与配置
+    - name: 加载自定义配置与脚本
       run: |
-        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
+        [ -e $CONFIG_FILE ] && cp $CONFIG_FILE openwrt/.config
         chmod +x $DIY_P2_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
 
-    - name: 下载源码包
+    - name: 下载源码 (物理清理缓存)
       run: |
         cd openwrt
-        # 物理清理旧索引，防止变量解析错误
+        # 物理熔断：确保读取您在源码中修复好的 Makefile 变量
         rm -rf tmp
         make defconfig
         make download -j8
 
-    - name: 执行固件编译
+    - name: 执行固件编译 (救砖锁定)
       run: |
         cd openwrt
-        # 再次清理物理缓存，确保读取您修复后的 Makefile
         rm -rf tmp
         make defconfig
-        
-        # 优先编译工具链对齐物理路径
-        echo "正在执行物理级工具链对齐..."
+        # 优先物理生成工具链
         make toolchain/install -j$(nproc) || make toolchain/install -j1 V=s
-        
-        # 编译 U-Boot (将物理读取您仓库中带 PKG_SOURCE 定义的 Makefile)
+        # 物理编译 U-Boot (生成 FIP/DA)
         make package/boot/uboot-mediatek/compile V=s -j$(nproc)
-        
-        # 编译主固件
+        # 全局编译
         make -j$(nproc) || make -j1 V=s
-        echo "status=success" >> $GITHUB_OUTPUT
 
-    - name: 整理产物
+    - name: 整理救砖固件产物
       id: organize
       run: |
         cd openwrt/bin/targets/*/*
-        mkdir -p /tmp/COLLECT
-        # 物理收集救砖文件与固件
-        cp -f *DA* *fip* *u-boot* *sysupgrade.bin /tmp/COLLECT/ 2>/dev/null || true
+        mkdir -p /tmp/COLLECT_DIR
+        # 物理像素级匹配：DA, FIP, U-Boot, Sysupgrade
+        cp -f *DA* /tmp/COLLECT_DIR/ 2>/dev/null || true
+        cp -f *fip* /tmp/COLLECT_DIR/ 2>/dev/null || true
+        cp -f *u-boot* /tmp/COLLECT_DIR/ 2>/dev/null || true
+        cp -f *sysupgrade.bin /tmp/COLLECT_DIR/ 2>/dev/null || true
+        # 重新对齐上传目录
+        rm -rf *
+        cp -af /tmp/COLLECT_DIR/* . 2>/dev/null || true
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
         echo "status=success" >> $GITHUB_OUTPUT
 
-    - name: 上传固件
+    - name: 上传 SL3000 最终固件
       uses: actions/upload-artifact@main
       if: steps.organize.outputs.status == 'success'
       with:
-        name: SL3000_Firmware
+        name: SL3000_24.10_5.4_Firmware
         path: ${{ env.FIRMWARE }}
