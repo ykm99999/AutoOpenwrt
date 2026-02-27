@@ -1,4 +1,4 @@
-name: 司洛SL-3000构建修复版
+name: 司洛SL-3000构建最终修复版
 
 on:
   repository_dispatch:
@@ -8,7 +8,6 @@ env:
   REPO_URL: https://github.com/ykm99999/54
   REPO_BRANCH: 2410
   CONFIG_FILE: sl3000.config
-  DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: scripts/sl3000-patch.sh
   TZ: Asia/Shanghai
 
@@ -20,7 +19,7 @@ jobs:
     - name: Checkout
       uses: actions/checkout@main
 
-    - name: Initialization environment
+    - name: 初始化环境
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
@@ -31,54 +30,62 @@ jobs:
         sudo mkdir -p /workdir
         sudo chown $USER:$GROUPS /workdir
 
-    - name: Clone source code
+    - name: 克隆源码
       working-directory: /workdir
       run: |
         git clone $REPO_URL -b $REPO_BRANCH openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
-    - name: Update & Install feeds
+    - name: 更新并安装 Feeds
       run: |
         cd openwrt
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    - name: Load custom configuration
+    - name: 加载自定义脚本与配置
       run: |
         [ -e $CONFIG_FILE ] && mv $CONFIG_FILE openwrt/.config
         chmod +x $DIY_P2_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
 
-    - name: Download package
+    - name: 下载源码包
       run: |
         cd openwrt
+        # 物理清理旧索引，防止变量解析错误
+        rm -rf tmp
         make defconfig
         make download -j8
 
-    - name: Compile the firmware
+    - name: 执行固件编译
       run: |
         cd openwrt
-        # 物理熔断保护：清理索引并优先构建工具链
+        # 再次清理物理缓存，确保读取您修复后的 Makefile
         rm -rf tmp
         make defconfig
+        
+        # 优先编译工具链对齐物理路径
         echo "正在执行物理级工具链对齐..."
         make toolchain/install -j$(nproc) || make toolchain/install -j1 V=s
-        # 编译目标
+        
+        # 编译 U-Boot (将物理读取您仓库中带 PKG_SOURCE 定义的 Makefile)
         make package/boot/uboot-mediatek/compile V=s -j$(nproc)
+        
+        # 编译主固件
         make -j$(nproc) || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
 
-    - name: Organize files
+    - name: 整理产物
       id: organize
       run: |
         cd openwrt/bin/targets/*/*
         mkdir -p /tmp/COLLECT
+        # 物理收集救砖文件与固件
         cp -f *DA* *fip* *u-boot* *sysupgrade.bin /tmp/COLLECT/ 2>/dev/null || true
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
         echo "status=success" >> $GITHUB_OUTPUT
 
-    - name: Upload firmware
+    - name: 上传固件
       uses: actions/upload-artifact@main
       if: steps.organize.outputs.status == 'success'
       with:
