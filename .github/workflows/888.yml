@@ -1,4 +1,4 @@
-name: SL3000-eMMC-Uboot救砖完整版
+name: SL3000-eMMC-彻底解决版
 
 on:
   repository_dispatch:
@@ -40,28 +40,28 @@ jobs:
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    - name: 执行物理注入与修复 (禁用EOF)
+    - name: 执行物理注入与彻底修复
       run: |
         [ -e $CONFIG_FILE ] && cp $CONFIG_FILE openwrt/.config
         chmod +x $DIY_P2_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
 
-    - name: 下载源码 (粉碎旧记忆)
+    - name: 下载源码 (物理粉碎旧记忆)
       run: |
         cd openwrt
         rm -rf tmp
         make defconfig
         make download -j8
 
-    - name: 物理编译救砖三件套
+    - name: 救砖固件物理编译逻辑
       run: |
         cd openwrt
-        # 物理清理 5.4 驱动冲突点
+        # 物理清理驱动冲突残留
         rm -rf tmp build_dir/target-aarch64_cortex-a53_musl/linux-mediatek_mt7981/mac80211*
         make defconfig
         
-        # 1. 物理优先编译工具链
+        # 1. 物理编译工具链
         make toolchain/install -j$(nproc) || make toolchain/install -j1 V=s
         
         # 2. 强制物理编译 U-Boot (产出 FIP/DA 救砖核心)
@@ -70,12 +70,12 @@ jobs:
         # 3. 全局物理编译
         make -j$(nproc) || make -j1 V=s
 
-    - name: 物理提取 eMMC 救砖固件
+    - name: 物理提取 SL3000-eMMC 救砖包
       id: organize
       run: |
         cd openwrt/bin/targets/*/*
         mkdir -p /tmp/COLLECT
-        # 像素级筛选 eMMC 专用 FIP, DA 和镜像
+        # 像素级精准匹配 eMMC 救砖文件
         cp -f *emmc*fip* /tmp/COLLECT/ 2>/dev/null || true
         cp -f *DA* /tmp/COLLECT/ 2>/dev/null || true
         cp -f *emmc*u-boot* /tmp/COLLECT/ 2>/dev/null || true
@@ -86,9 +86,9 @@ jobs:
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
         echo "status=success" >> $GITHUB_OUTPUT
 
-    - name: 上传 SL3000-eMMC 救砖成果
+    - name: 上传救砖成果
       uses: actions/upload-artifact@main
       if: steps.organize.outputs.status == 'success'
       with:
-        name: SL3000_eMMC_Full_Recovery_Firmware
+        name: SL3000_eMMC_Full_Recovery
         path: ${{ env.FIRMWARE }}
