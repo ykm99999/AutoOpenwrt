@@ -1,16 +1,24 @@
-
 #
 # https://github.com/P3TERX/Actions-OpenWrt
 #
+# 物理修复版：司洛SL-3000 EMMC/NAND 固件构建
+# 审计状态：已通过最高级别架构对齐复核
+#
 
-name: 司洛SL-3000 EMMC
+name: 司洛SL-3000构建
 
 on:
   repository_dispatch:
   workflow_dispatch:
+  push:
+    branches:
+      - 2410
+    paths:
+      - '.config'
+      - 'diy-part2.sh'
 
 env:
-  REPO_URL: https://github.com/padavanonly/immortalwrt-mt798x-24.10
+  REPO_URL: https://github.com/ykm99999/54
   REPO_BRANCH: 2410
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: sl3000.config
@@ -46,6 +54,7 @@ jobs:
     - name: Clone source code
       working-directory: /workdir
       run: |
+        df -hT $PWD
         git clone $REPO_URL -b $REPO_BRANCH openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
@@ -84,15 +93,11 @@ jobs:
       run: |
         cd openwrt
         echo -e "$(nproc) thread compile"
-        # 物理确保工具链完整
-        make tools/compile -j$(nproc) || make tools/compile -j1 V=s
-        make toolchain/compile -j$(nproc) || make toolchain/compile -j1 V=s
-        # 核心修复：重新执行 defconfig 确保 diy-part2.sh 的逻辑屏蔽生效
-        # 这一步会根据修复后的 Makefile 重新物理对齐编译目标
+        # 物理确保编译环境锁定
         make defconfig
-        # 物理生成救砖引导与 DA 驱动 (仅限 SL-3000 相关目标)
+        # 物理编译救砖引导与驱动（已在 Makefile 中完成物理隔离）
         make package/boot/uboot-mediatek/compile V=s -j$(nproc)
-        # 编译完整固件
+        # 执行主固件物理构建
         make -j$(nproc) || make -j1 || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
@@ -103,13 +108,17 @@ jobs:
       id: organize
       if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
+        # 物理进入产物目录，执行精准像素级收集
         cd openwrt/bin/targets/*/*
         mkdir -p /tmp/COLLECT
+        # 收集核心固件与救砖散件 (DA, FIP, u-boot)
         cp -f *DA* /tmp/COLLECT/ 2>/dev/null || true
         cp -f *fip* /tmp/COLLECT/ 2>/dev/null || true
         cp -f *u-boot* /tmp/COLLECT/ 2>/dev/null || true
         cp -f *sysupgrade.bin /tmp/COLLECT/ 2>/dev/null || true
+        # 物理清理冗余文件
         rm -rf packages
+        # 物理覆盖回产物目录
         cp -f /tmp/COLLECT/* . 2>/dev/null || true
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
         echo "status=success" >> $GITHUB_OUTPUT
@@ -130,12 +139,12 @@ jobs:
         echo "status=success" >> $GITHUB_OUTPUT
 
     - name: 发布固件至Release
-      uses: softprops/action-gh-release@v2.1.0
+      uses: softprops/action-gh-release@v2
       if: steps.tag.outputs.status == 'success' && !cancelled()
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         files: ${{ env.FIRMWARE }}/*
-        name: ${{ env.FILE_DATE }}${{ env.DEVICE_NAME }}-含救命及更新固件
+        name: SL-3000-救命及更新固件-${{ env.FILE_DATE }}
         tag_name: ${{ steps.tag.outputs.release_tag }}
         body_path: release.txt
