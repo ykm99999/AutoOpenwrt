@@ -1,11 +1,10 @@
-name: SL3000-24.10源码-5.4内核构建
+name: SL3000-24.10源码-5.4内核-粉碎缓存版
 
 on:
   repository_dispatch:
   workflow_dispatch:
 
 env:
-  # 物理锁定您的 5.4 内核源码仓库
   REPO_URL: https://github.com/ykm99999/54
   REPO_BRANCH: 2410
   CONFIG_FILE: sl3000.config
@@ -50,23 +49,28 @@ jobs:
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
 
-    - name: 下载源码 (物理清理缓存)
+    - name: 下载源码 (粉碎旧记忆第一步)
       run: |
         cd openwrt
-        # 物理熔断：确保读取您在源码中修复好的 Makefile 变量
+        # 物理粉碎：删除 tmp 目录，彻底清除旧 Makefile 索引
         rm -rf tmp
+        # 重新生成干净的权威索引
         make defconfig
         make download -j8
 
-    - name: 执行固件编译 (救砖锁定)
+    - name: 执行固件编译 (粉碎旧记忆第二步)
       run: |
         cd openwrt
+        # 物理二次粉碎：确保在编译开始前不留任何旧缓存
         rm -rf tmp
         make defconfig
-        # 优先物理生成工具链
+        
+        # 优先编译工具链对齐物理路径
         make toolchain/install -j$(nproc) || make toolchain/install -j1 V=s
-        # 物理编译 U-Boot (生成 FIP/DA)
+        
+        # 物理编译 U-Boot (基于您的修复 Makefile 生成 FIP/DA)
         make package/boot/uboot-mediatek/compile V=s -j$(nproc)
+        
         # 全局编译
         make -j$(nproc) || make -j1 V=s
 
@@ -75,11 +79,12 @@ jobs:
       run: |
         cd openwrt/bin/targets/*/*
         mkdir -p /tmp/COLLECT_DIR
-        # 物理像素级匹配：DA, FIP, U-Boot, Sysupgrade
+        # 物理像素级匹配救砖核心件
         cp -f *DA* /tmp/COLLECT_DIR/ 2>/dev/null || true
         cp -f *fip* /tmp/COLLECT_DIR/ 2>/dev/null || true
         cp -f *u-boot* /tmp/COLLECT_DIR/ 2>/dev/null || true
         cp -f *sysupgrade.bin /tmp/COLLECT_DIR/ 2>/dev/null || true
+        
         # 重新对齐上传目录
         rm -rf *
         cp -af /tmp/COLLECT_DIR/* . 2>/dev/null || true
@@ -90,5 +95,5 @@ jobs:
       uses: actions/upload-artifact@main
       if: steps.organize.outputs.status == 'success'
       with:
-        name: SL3000_24.10_5.4_Firmware
+        name: SL3000_Authority_Firmware
         path: ${{ env.FIRMWARE }}
