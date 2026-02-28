@@ -1,4 +1,4 @@
-name: SL3000-eMMC-物理强刷修复版
+name: SL3000-eMMC-最终物理解决版
 
 on:
   repository_dispatch:
@@ -19,23 +19,16 @@ jobs:
     - name: Checkout
       uses: actions/checkout@main
 
-    - name: 物理环境初始化
-      run: |
-        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-        sudo -E apt-get -qq update
-        sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
-        sudo timedatectl set-timezone "$TZ"
-
     - name: 物理克隆仓库
       run: |
         git clone $REPO_URL -b $REPO_BRANCH openwrt
         ln -sf openwrt $GITHUB_WORKSPACE/openwrt
 
-    - name: 更新 Feeds 并物理清理冲突
+    - name: 更新 Feeds 并物理阻断
       run: |
         cd openwrt
         ./scripts/feeds update -a
-        # 物理粉碎 feeds 中的 mac80211 链接，防止其覆盖我们的修复
+        # 物理粉碎 feeds 中可能带有的 mac80211 软链接
         rm -rf feeds/base/package/kernel/mac80211
         ./scripts/feeds install -a
 
@@ -46,20 +39,25 @@ jobs:
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
 
-    - name: 下载源码与物理防呆检查
+    - name: 物理清理编译残留 (防止 6.6.15 幻像)
       run: |
         cd openwrt
-        # 再次确认物理位置没有 backports-6.6
-        find package/kernel/mac80211 -name "*.c" | xargs grep -l "tasklet_setup" | xargs sed -i 's/tasklet_setup/tasklet_init/g' 2>/dev/null || true
+        # 物理移除所有指向 mac80211 的标记文件
+        rm -rf staging_dir/target-aarch64_cortex-a53_musl/stamp/.package_kernel_mac80211*
+        rm -rf build_dir/target-aarch64_cortex-a53_musl/linux-mediatek_mt7981/mac80211*
         make defconfig
+
+    - name: 下载源码 (物理离线化检查)
+      run: |
+        cd openwrt
         make download -j8
 
     - name: 救砖固件物理编译
       run: |
         cd openwrt
-        # 物理粉碎 build_dir 缓存，防止 Error 重现
-        rm -rf build_dir/target-aarch64_cortex-a53_musl/linux-mediatek_mt7981/mac80211*
         make toolchain/install -j$(nproc)
+        # 强制物理编译已修复的 mac80211
+        make package/kernel/mac80211/compile V=s -j1
         make package/boot/uboot-mediatek/compile V=s -j$(nproc)
         make -j$(nproc) || make -j1 V=s
 
@@ -76,5 +74,5 @@ jobs:
     - name: 上传救砖包
       uses: actions/upload-artifact@main
       with:
-        name: SL3000_eMMC_Fixed_Recovery
+        name: SL3000_eMMC_Final_Fixed
         path: ${{ env.FIRMWARE }}
