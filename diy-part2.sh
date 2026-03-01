@@ -1,5 +1,4 @@
 #!/bin/bash
-# File name: diy-part2.sh
 # 核心原则：原文照抄，只改错误，物理锁死 SL3000 eMMC
 
 # 1. 物理修改默认 IP
@@ -8,17 +7,16 @@ sed -i 's/192.168.1.1/192.168.1.2/g' package/base-files/files/bin/config_generat
 # 2. 物理修复 U-Boot Makefile (精准修复 Error 13s)
 UBOOT_PATH="package/boot/uboot-mediatek/Makefile"
 if [ -f "$UBOOT_PATH" ]; then
-    # 物理锁定仓库 URL 与分支
+    # 物理锁定仓库 URL 与分支 (使用 ^ 锚定行首，防止破坏块内缩进)
     sed -i "s|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://github.com/ykm99999/66|g" "$UBOOT_PATH"
     sed -i "s|^PKG_SOURCE_VERSION:=.*|PKG_SOURCE_VERSION:=sl3000-uboot-base|g" "$UBOOT_PATH"
     
-    # 【删除其他设备的关键逻辑】：物理强制覆盖编译目标
-    # 这样编译器只会寻找 mt7981_sl3000_emmc，其他几百个设备定义会被逻辑忽略
+    # 【逻辑删除其他设备】：强制覆盖 UBOOT_TARGETS
+    # 这样编译器只会物理处理这一种设备，达到“删除其他设备”的效果，且不会破坏 Makefile 结构
     sed -i "s|^UBOOT_TARGETS := .*|UBOOT_TARGETS := mt7981_sl3000_emmc|g" "$UBOOT_PATH"
 fi
 
-# 3. 物理重写 MK 文件 (删除其他设备，仅保留 SL-3000 eMMC)
-# 这一步实现了您“删除其他设备”的要求，且不影响 Makefile 稳定性
+# 3. 物理重构 MK 文件 (物理删除其他所有设备，仅保留 SL-3000 eMMC)
 MK_PATH="target/linux/mediatek/image/mt7981.mk"
 if [ -f "$MK_PATH" ]; then
 cat << 'EOF' > "$MK_PATH"
@@ -39,7 +37,7 @@ TARGET_DEVICES += sl_3000-emmc
 EOF
 fi
 
-# 4. 物理注册 DTS (确保内核识别)
+# 4. 物理注册 DTS
 DTS_MAKEFILE="target/linux/mediatek/files-5.4/arch/arm64/boot/dts/mediatek/Makefile"
 if [ -f "$DTS_MAKEFILE" ]; then
     if ! grep -q "mt7981-sl-3000-emmc.dtb" "$DTS_MAKEFILE"; then
