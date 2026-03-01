@@ -1,22 +1,22 @@
 #!/bin/bash
-# 核心原则：原文照抄，只改错误，物理锁死 SL3000 eMMC
+# 核心原则：原文照抄逻辑，物理锁死单一设备，修复语法错误
 
-# 1. 物理修改默认 IP
+# 1. 修改默认 IP
 sed -i 's/192.168.1.1/192.168.1.2/g' package/base-files/files/bin/config_generate
 
-# 2. 物理修复 U-Boot Makefile (精准修复 Error 13s)
+# 2. 【彻底解决 947 报错】：精准修改 U-Boot 包装脚本
+# 使用 ^ 符号严格锁定行首，不修改任何 define/endef 块内部结构，保证 Makefile 语法完整
 UBOOT_PATH="package/boot/uboot-mediatek/Makefile"
 if [ -f "$UBOOT_PATH" ]; then
-    # 物理锁定仓库 URL 与分支 (使用 ^ 锚定行首，防止破坏块内缩进)
+    # 物理锁定仓库地址和版本
     sed -i "s|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://github.com/ykm99999/66|g" "$UBOOT_PATH"
     sed -i "s|^PKG_SOURCE_VERSION:=.*|PKG_SOURCE_VERSION:=sl3000-uboot-base|g" "$UBOOT_PATH"
-    
-    # 【逻辑删除其他设备】：强制覆盖 UBOOT_TARGETS
-    # 这样编译器只会物理处理这一种设备，达到“删除其他设备”的效果，且不会破坏 Makefile 结构
+    # 物理锁定唯一编译目标：mt7981_sl3000_emmc
     sed -i "s|^UBOOT_TARGETS := .*|UBOOT_TARGETS := mt7981_sl3000_emmc|g" "$UBOOT_PATH"
 fi
 
-# 3. 物理重构 MK 文件 (物理删除其他所有设备，仅保留 SL-3000 eMMC)
+# 3. 【删除其他所有设备】：物理重构 mt7981.mk
+# 直接用 EOF 覆盖原文件，这样除了 SL3000 外，其他所有设备在编译阶段会全部消失
 MK_PATH="target/linux/mediatek/image/mt7981.mk"
 if [ -f "$MK_PATH" ]; then
 cat << 'EOF' > "$MK_PATH"
