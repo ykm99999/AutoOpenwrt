@@ -1,4 +1,4 @@
-name: SL3000-eMMC-物理规则修复版
+name: SL3000-eMMC-全量重构物理修复版
 
 on:
   repository_dispatch:
@@ -48,8 +48,8 @@ jobs:
     - name: 物理清理并预备
       run: |
         cd openwrt
-        rm -rf build_dir/target-aarch64_cortex-a53_musl/u-boot-*
-        rm -rf staging_dir/target-aarch64_cortex-a53_musl/stamp/.package_boot_uboot-mediatek*
+        rm -rf build_dir/target-aarch64_cortex-a53_musl/uboot-mediatek*
+        rm -rf staging_dir/target-aarch64_cortex-a53_musl/stamp/.package_uboot-mediatek*
         make defconfig
 
     - name: 下载源码
@@ -61,7 +61,7 @@ jobs:
       run: |
         cd openwrt
         make toolchain/install -j$(nproc)
-        # 物理修正：直接编译 uboot-mediatek 主包，脚本已确保内部只有单变体
+        # 物理修正：由于 Makefile 已重构为单一标准包，直接编译主目标
         make package/boot/uboot-mediatek/compile V=s -j$(nproc)
         make -j$(nproc) || make -j1 V=s
 
@@ -69,6 +69,8 @@ jobs:
       run: |
         cd openwrt/bin/targets/*/*
         mkdir -p /tmp/COLLECT
+        # 额外从编译后的 package 目录提取物理产物以防万一
+        cp -f ../../../bin/packages/aarch64_cortex-a53/base/uboot-mediatek* /tmp/COLLECT/ 2>/dev/null || true
         cp -f *emmc*fip* /tmp/COLLECT/ 2>/dev/null || true
         cp -f *DA* /tmp/COLLECT/ 2>/dev/null || true
         cp -f *emmc*sysupgrade.bin /tmp/COLLECT/ 2>/dev/null || true
@@ -78,5 +80,5 @@ jobs:
     - name: 上传救砖固件
       uses: actions/upload-artifact@main
       with:
-        name: SL3000_eMMC_Rule_Fixed_Recovery
+        name: SL3000_eMMC_Final_Physical_Fixed
         path: ${{ env.FIRMWARE }}
