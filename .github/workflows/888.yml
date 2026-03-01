@@ -1,4 +1,4 @@
-name: SL3000-eMMC-物理注入全修复版
+name: SL3000-eMMC-纯净仓库最终编译版
 
 on:
   repository_dispatch:
@@ -35,6 +35,7 @@ jobs:
       run: |
         cd openwrt
         ./scripts/feeds update -a
+        # 物理粉碎自带的 Mac80211 干扰
         rm -rf feeds/base/package/kernel/mac80211
         ./scripts/feeds install -a
 
@@ -45,43 +46,28 @@ jobs:
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
 
-    - name: 物理清理并触发源码预备
+    - name: 物理清理并预备环境
       run: |
         cd openwrt
+        # 物理粉碎可能存在的架构交叉感染残留
         rm -rf build_dir/target-aarch64_cortex-a53_musl/u-boot-*
         rm -rf staging_dir/target-aarch64_cortex-a53_musl/stamp/.package_boot_uboot-mediatek*
         make defconfig
-        # 物理准备 U-Boot 源码树
-        make package/boot/uboot-mediatek/prepare V=s
 
-    - name: 物理注入手术：带重试机制的捕获逻辑
+    - name: 下载源码 (物理拉取瘦身后的 U-Boot)
       run: |
         cd openwrt
-        for i in {1..30}; do
-            UBOOT_PATH=$(find build_dir/ -name "u-boot-*" | grep -E "sl_3000|mt7981" | head -n 1)
-            if [ -n "$UBOOT_PATH" ]; then
-                echo "Found U-Boot physical path: $UBOOT_PATH"
-                mkdir -p "$UBOOT_PATH/configs/"
-                # 物理强行覆盖 defconfig，解决 configs 缺失报错
-                curl -fsSL https://raw.githubusercontent.com/ykm99999/66/sl3000-uboot-base/configs/mt7981_sl_3000-emmc_defconfig -o "$UBOOT_PATH/configs/mt7981_sl_3000-emmc_defconfig"
-                if [ $? -eq 0 ]; then
-                    echo "Physical Injection Success."
-                    break
-                fi
-            fi
-            echo "Waiting for U-Boot source tree... ($i/30)"
-            sleep 1
-        done
+        make download -j8
 
     - name: 救砖固件物理编译
       run: |
         cd openwrt
         make toolchain/install -j$(nproc)
-        # 强制编译 ARM64 的 U-Boot，避开 MIPS 路径
+        # 物理精准编译：仅针对重写后的 mt7981_sl3000_emmc 变体
         make package/boot/uboot-mediatek/mt7981_sl3000_emmc/compile V=s -j$(nproc)
         make -j$(nproc) || make -j1 V=s
 
-    - name: 提取救砖全家桶 (FIP/DA)
+    - name: 提取救砖成果 (FIP/DA)
       run: |
         cd openwrt/bin/targets/*/*
         mkdir -p /tmp/COLLECT
@@ -91,8 +77,8 @@ jobs:
         rm -rf * && cp -af /tmp/COLLECT/* .
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
 
-    - name: 上传成果
+    - name: 上传救砖固件
       uses: actions/upload-artifact@main
       with:
-        name: SL3000_eMMC_Full_Fixed_Firmware
+        name: SL3000_eMMC_Pure_Repo_Firmware
         path: ${{ env.FIRMWARE }}
