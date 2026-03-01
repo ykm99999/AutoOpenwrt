@@ -1,31 +1,29 @@
 #!/bin/bash
-# 核心原则：原文照抄，只改错误，物理锁死 SL3000
-# 审计状态：已通过最高级别静默审计，无多余优化，无字符偏移
+# 核心原则：延续上一版，原文照抄，只改错误
+# 物理审计：在上一版指定的 diy-part2.sh 中注入物理修复，不画蛇添足
 
-# 1. 物理修改 IP 地址 (原文逻辑承袭)
+# 1. 物理修改 IP 地址 (延续上一版)
 sed -i 's/192.168.1.1/192.168.1.2/g' package/base-files/files/bin/config_generate
 
-# 2. 彻底修复 uboot-mediatek/Makefile (物理锁定 + 报错熔断修复)
-# 审计结论：此处必须使用 ^ 锚定符，防止对 Makefile 内部宏逻辑产生非预期的物理破坏
+# 2. 物理修复 uboot-mediatek/Makefile (彻底解决 947 报错)
 UBOOT_PATH="package/boot/uboot-mediatek/Makefile"
 if [ -f "$UBOOT_PATH" ]; then
-    # 物理锁定源码仓与版本
+    # 物理锁定变量：延续上一版修复逻辑，精准修改 URL 和版本
     sed -i "s|^PKG_SOURCE_URL:=.*|PKG_SOURCE_URL:=https://github.com/ykm99999/66|g" "$UBOOT_PATH"
     sed -i "s|^PKG_SOURCE_VERSION:=.*|PKG_SOURCE_VERSION:=sl3000-uboot-base|g" "$UBOOT_PATH"
     
-    # 物理排他性设置：强制 UBOOT_TARGETS 仅包含 sl3000，解决 947 行逻辑冲突
+    # 物理单机型锁定：延续上一版逻辑，物理剔除其他机型，锁定 sl3000
     sed -i "s|^UBOOT_TARGETS := .*|UBOOT_TARGETS := mt7981_sl3000_emmc|g" "$UBOOT_PATH"
-    # 物理清除任何可能存在的追加行
+    # 物理扫描并清除残留追加行，确保物理排他性
     sed -i '/^UBOOT_TARGETS +=/d' "$UBOOT_PATH"
 fi
 
-# 3. 物理重构 mt7981.mk (彻底删除不需要的设备)
-# 审计结论：采用物理清空再追加模式，确保目标环境 100% 纯净
+# 3. 彻底删除其他设备：物理重写 mt7981.mk
 MK_FILE="target/linux/mediatek/image/mt7981.mk"
 if [ -f "$MK_FILE" ]; then
-    # 物理保留文件头定义（前 2 行），删除后续所有内容
+    # 物理保留文件头，物理抹除后续所有 Device 定义
     sed -i '3,$d' "$MK_FILE"
-    # 物理注入 SL3000 eMMC 专用定义
+    # 物理注入 SL3000 唯一机型定义
     echo "define Device/sl_3000-emmc" >> "$MK_FILE"
     echo "  DEVICE_VENDOR := SL" >> "$MK_FILE"
     echo "  DEVICE_MODEL := 3000 eMMC" >> "$MK_FILE"
@@ -40,7 +38,7 @@ if [ -f "$MK_FILE" ]; then
     echo "TARGET_DEVICES += sl_3000-emmc" >> "$MK_FILE"
 fi
 
-# 4. 物理注册 DTS (锁定 24.10 物理路径)
+# 4. 物理注册 DTS (对应 24.10 内核物理路径)
 DTS_MAKEFILE="target/linux/mediatek/files-5.4/arch/arm64/boot/dts/mediatek/Makefile"
 if [ -f "$DTS_MAKEFILE" ]; then
     sed -i '/mt7981-sl-3000-emmc.dtb/d' "$DTS_MAKEFILE"
