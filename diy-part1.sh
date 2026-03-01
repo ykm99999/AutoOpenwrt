@@ -16,3 +16,7 @@
 # Add a feed source
 echo 'src-git helloworld https://github.com/fw876/helloworld' >>feeds.conf.default
 #echo 'src-git passwall https://github.com/xiaorouji/openwrt-passwall' >>feeds.conf.default
+
+# ======= 添加：SL3000 物理环境封印 (物理删除冲突源) =======
+rm -rf package/kernel/mac80211
+rm -rf package/kernel/mt76
