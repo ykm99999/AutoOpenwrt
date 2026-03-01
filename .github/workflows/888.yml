@@ -48,6 +48,7 @@ jobs:
 
     - name: Load custom configuration
       run: |
+        # 物理注入：仅搬运仓库 .config，MK/DTS 已在源码内由脚本处理
         [ -e $CONFIG_FILE ] && cp -f $CONFIG_FILE openwrt/.config
         chmod +x $DIY_P2_SH
         cd openwrt && $GITHUB_WORKSPACE/$DIY_P2_SH
@@ -57,16 +58,19 @@ jobs:
       run: |
         cd openwrt
         make defconfig
-        # 物理物理优先：必须先单独编译成功 U-Boot
+        # 物理物理优先：必须先单独编译成功 U-Boot 以彻底验证 Makefile 修复情况
+        echo "Starting Physical Audit of U-Boot Compilation..."
         make package/boot/uboot-mediatek/compile V=s -j1
+        # 如果 U-Boot 成功，则开启多核全速编译
         make -j$(nproc) || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
 
-    - name: Organize files
+    - name: Organize files (物理提取救砖产物)
       id: organize
-      if: steps.compile.outputs.status == 'success'
+      if: steps.compile.outputs.status == 'success' && !cancelled()
       run: |
+        # 物理物理锁定路径：对应 diy-part2 重写后的 mk 路径
         cd openwrt/bin/targets/mediatek/filogic
         mkdir -p /tmp/COLLECT
         cp -f *emmc*fip* /tmp/COLLECT/ 2>/dev/null || true
@@ -78,17 +82,20 @@ jobs:
 
     - name: Upload firmware
       uses: actions/upload-artifact@main
-      if: steps.organize.outputs.status == 'success'
+      if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
         name: SL3000_Pack${{ env.FILE_DATE }}
         path: ${{ env.FIRMWARE }}
 
     - name: Release
       uses: softprops/action-gh-release@v2
-      if: steps.organize.outputs.status == 'success'
+      if: steps.organize.outputs.status == 'success' && !cancelled()
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         files: ${{ env.FIRMWARE }}/*
         name: ${{ env.FILE_DATE }}-SL3000-救砖增强版
         tag_name: ${{ env.FILE_DATE }}
+        body: |
+          司洛 SL3000 eMMC 构建完成。
+          已物理剔除其他设备，仅保留单一机型。
