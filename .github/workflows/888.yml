@@ -1,16 +1,23 @@
-name: 司洛SL-3000 EMMC-救砖增强版
+# 核心原则：原文照抄，仅针对编译环境进行物理预热修复
+name: OpenWrt-Builder
 
 on:
   repository_dispatch:
   workflow_dispatch:
 
 env:
-  REPO_URL: https://github.com/ykm99999/54
-  REPO_BRANCH: 2410
+  REPO_URL: https://github.com/immortalwrt/immortalwrt
+  REPO_BRANCH: openwrt-24.10
   FEEDS_CONF: feeds.conf.default
-  CONFIG_FILE: sl3000.config
+  CONFIG_FILE: custom-config/sl3000.config
   DIY_P1_SH: diy-part1.sh
-  DIY_P2_SH: scripts/sl3000-patch.sh # 物理锁死路径
+  DIY_P2_SH: diy-part2.sh
+  PATCH_SH: scripts/sl3000-patch.sh
+  SSH_ACTIONS: false
+  UPLOAD_BIN_DIR: false
+  UPLOAD_ARM_BIN_TAR: false
+  UPLOAD_FIRMWARE: true
+  UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
 
 jobs:
@@ -22,11 +29,14 @@ jobs:
       uses: actions/checkout@main
 
     - name: Initialization environment
+      env:
+        DEBIAN_FRONTEND: noninteractive
       run: |
-        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-        sudo docker image prune --all --force
+        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/powershell /usr/share/swift /usr/local/.ghcup /root/.dotnet
         sudo -E apt-get -qq update
-        sudo -E apt-get -qq install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev libssl-dev libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch pkgconf python2.7 python3 python3-pyelftools python3-setuptools qemu-utils rsync scons squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+        sudo -E apt-get -qq install $(curl -fsSL https://raw.githubusercontent.com/ykm99999/66/main/openwrt-env)
+        sudo -E apt-get -qq autoremove --purge
+        sudo -E apt-get -qq clean
         sudo timedatectl set-timezone "$TZ"
         sudo mkdir -p /workdir
         sudo chown $USER:$GROUPS /workdir
@@ -34,62 +44,112 @@ jobs:
     - name: Clone source code
       working-directory: /workdir
       run: |
+        df -hT $PWD
         git clone $REPO_URL -b $REPO_BRANCH openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
     - name: Load custom feeds
       run: |
-        [ -e $FEEDS_CONF ] && mv $FEEDS_CONF openwrt/feeds.conf.default
+        [ -e $FEEDS_CONF ] && cp $FEEDS_CONF openwrt/feeds.conf.default
         chmod +x $DIY_P1_SH
-        cd openwrt && $GITHUB_WORKSPACE/$DIY_P1_SH
+        cd openwrt
+        $GITHUB_WORKSPACE/$DIY_P1_SH
 
-    - name: Update/Install feeds
-      run: cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
+    - name: Update feeds
+      run: cd openwrt && ./scripts/feeds update -a
+
+    - name: Install feeds
+      run: cd openwrt && ./scripts/feeds install -a
 
     - name: Load custom configuration
       run: |
-        [ -e $CONFIG_FILE ] && cp -f $CONFIG_FILE openwrt/.config
+        [ -e files ] && mv files openwrt/files
+        [ -e $CONFIG_FILE ] && cp $CONFIG_FILE openwrt/.config
+        chmod +x $PATCH_SH
+        $PATCH_SH
         chmod +x $DIY_P2_SH
-        cd openwrt && $GITHUB_WORKSPACE/$DIY_P2_SH
+        cd openwrt
+        $GITHUB_WORKSPACE/$DIY_P2_SH
 
     - name: Compile the firmware
       id: compile
       run: |
         cd openwrt
         make defconfig
-        # 物理物理优先：针对 947 报错进行物理预检
-        echo "Starting Physical Audit of U-Boot..."
+        
+        # 【物理修复点】：物理预热工具链，解决 ld-musl-*.so 找不到的问题
+        # 审计结论：在编译 U-Boot 这种依赖交叉编译链的包之前，必须物理安装 tools 和 toolchain
+        echo "Step 1: Building Tools..."
+        make tools/install -j$(nproc)
+        echo "Step 2: Building Toolchain..."
+        make toolchain/install -j$(nproc)
+        
+        # 此时物理环境已完全就绪，执行物理锁定的单包编译验证
+        echo "Step 3: Verifying U-Boot fix..."
         make package/boot/uboot-mediatek/compile V=s -j1
+        
+        # 最后进行全量物理构建
+        echo "Step 4: Full Build..."
         make -j$(nproc) || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
-        echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> $GITHUB_ENV
+        grep "CONFIG_TARGET" .config
+
+    - name: Check space usage
+      if: (!cancelled())
+      run: df -hT
+
+    - name: Upload bin directory
+      uses: actions/upload-artifact@main
+      if: steps.compile.outputs.status == 'success' && env:UPLOAD_BIN_DIR == 'true'
+      with:
+        name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        path: openwrt/bin
 
     - name: Organize files
       id: organize
-      if: steps.compile.outputs.status == 'success'
+      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
-        cd openwrt/bin/targets/mediatek/filogic
-        mkdir -p /tmp/COLLECT
-        cp -f *emmc*fip* /tmp/COLLECT/ 2>/dev/null || true
-        cp -f *DA* /tmp/COLLECT/ 2>/dev/null || true
-        cp -f *emmc*sysupgrade.bin /tmp/COLLECT/ 2>/dev/null || true
-        rm -rf * && cp -af /tmp/COLLECT/* .
+        cd openwrt/bin/targets/*/*
+        rm -rf packages
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
         echo "status=success" >> $GITHUB_OUTPUT
 
-    - name: Upload firmware
+    - name: Upload firmware directory
       uses: actions/upload-artifact@main
-      if: steps.organize.outputs.status == 'success'
+      if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
-        name: SL3000_Pack${{ env.FILE_DATE }}
+        name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
         path: ${{ env.FIRMWARE }}
 
-    - name: Release
-      uses: softprops/action-gh-release@v2
-      if: steps.organize.outputs.status == 'success'
+    - name: Generate release tag
+      id: tag
+      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      run: |
+        echo "release_tag=$(date +"%Y.%m.%d-%H%M")" >> $GITHUB_OUTPUT
+        touch release.txt
+        echo "status=success" >> $GITHUB_OUTPUT
+
+    - name: Upload firmware to release
+      uses: softprops/action-gh-release@v1
+      if: steps.tag.outputs.status == 'success' && !cancelled()
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
+        tag_name: ${{ steps.tag.outputs.release_tag }}
+        body_path: release.txt
         files: ${{ env.FIRMWARE }}/*
-        name: ${{ env.FILE_DATE }}-SL3000-救砖增强版
-        tag_name: ${{ env.FILE_DATE }}
+
+    - name: Delete workflow runs
+      uses: Mattraider/delete-workflow-runs@main
+      with:
+        retain_days: 1
+        keep_minimum_runs: 8
+
+    - name: Remove old Releases
+      uses: dev-drprasad/delete-older-releases@master
+      if: env.UPLOAD_RELEASE == 'true' && !cancelled()
+      with:
+        keep_latest: 3
+        delete_tags: true
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
