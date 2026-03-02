@@ -27,7 +27,7 @@ jobs:
       env:
         DEBIAN_FRONTEND: noninteractive
       run: |
-        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost /usr/lib/jvm
+        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost /usr/local/share/vcpkg /var/lib/apt/lists/*
         sudo -E apt-get -qq update
         sudo -E apt-get -qq install $(curl -fsSL https://is.gd/depends_ubuntu_2204)
         sudo -E apt-get -qq autoremove --purge
@@ -79,15 +79,15 @@ jobs:
       id: organize
       if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
-        # 物理审计：在 bin/targets 目录下全局搜刮救砖全家桶产物
+        # 物理审计：在 bin 目录下搜刮所有由 ARTIFACTS 生成的救砖产物
         mkdir -p $GITHUB_WORKSPACE/FIRMWARE_OUT
         
-        # 1. 抓取救砖包 (ARTIFACTS 产物：GPT, Preloader, FIP)
+        # 1. 抓取救砖三件套 (GPT, Preloader, FIP)
         find openwrt/bin/targets/ -name "*gpt.bin" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \; 2>/dev/null || true
         find openwrt/bin/targets/ -name "*preloader*" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \; 2>/dev/null || true
         find openwrt/bin/targets/ -name "*bl31*fip*" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \; 2>/dev/null || true
         
-        # 2. 抓取系统固件
+        # 2. 抓取系统升级固件 (sysupgrade.bin)
         find openwrt/bin/targets/ -name "*sysupgrade.bin" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \; 2>/dev/null || true
         
         if [ "$(ls -A $GITHUB_WORKSPACE/FIRMWARE_OUT)" ]; then
