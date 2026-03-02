@@ -15,6 +15,7 @@ env:
 
 jobs:
   build:
+    # 物理修正：由 runs-runs 修正为标准的 runs-on
     runs-on: ubuntu-22.04
 
     steps:
@@ -49,7 +50,7 @@ jobs:
       run: |
         [ -e $CONFIG_FILE ] && cp $CONFIG_FILE openwrt/.config
         chmod +x $DIY_P2_SH
-        # 物理调用脚本，执行物理补丁
+        # 物理调用精简后的脚本，执行 IP 修改和 DTS 注册
         cd openwrt && $GITHUB_WORKSPACE/$DIY_P2_SH
 
     - name: Compile the firmware
@@ -57,7 +58,7 @@ jobs:
       run: |
         cd openwrt
         make defconfig
-        # 物理模拟：主流程编译，不画蛇添足
+        # 物理环境模拟：主流程构建，不画蛇添足
         make -j$(nproc) || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
 
