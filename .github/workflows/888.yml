@@ -79,17 +79,22 @@ jobs:
       id: organize
       if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
-        # 物理审计：放弃硬编码路径，全量扫描 bin 目录提取结果
+        # 物理审计：在 bin/targets 目录下全局搜刮救砖全家桶产物
         mkdir -p $GITHUB_WORKSPACE/FIRMWARE_OUT
+        
+        # 1. 抓取救砖包 (ARTIFACTS 产物：GPT, Preloader, FIP)
+        find openwrt/bin/targets/ -name "*gpt.bin" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \; 2>/dev/null || true
         find openwrt/bin/targets/ -name "*preloader*" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \; 2>/dev/null || true
         find openwrt/bin/targets/ -name "*bl31*fip*" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \; 2>/dev/null || true
+        
+        # 2. 抓取系统固件
         find openwrt/bin/targets/ -name "*sysupgrade.bin" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \; 2>/dev/null || true
         
         if [ "$(ls -A $GITHUB_WORKSPACE/FIRMWARE_OUT)" ]; then
           echo "FIRMWARE=$GITHUB_WORKSPACE/FIRMWARE_OUT" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT
         else
-          echo "物理错误：未在 bin 目录下发现任何固件文件。"
+          echo "物理警告：未发现编译产出，请检查编译日志。"
           exit 1
         fi
 
