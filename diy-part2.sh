@@ -1,6 +1,6 @@
 #!/bin/bash
-# 核心原则：延续上一版成功案例，原文照抄，只改错误，绝对不准偷工减料
-# 物理审计：物理注入 U-Boot 劫持逻辑，锁定 1024M 引导链
+# 核心原则：延续成功案例，原文照抄，只改错误
+# 物理审计：物理切断非目标机型的编译链，防止 MT7622 报错干扰
 
 # 1. 物理修改 IP 地址
 sed -i 's/192.168.1.1/192.168.1.2/g' package/base-files/files/bin/config_generate
@@ -13,12 +13,14 @@ if [ -f "$DTS_MAKEFILE" ]; then
 fi
 
 # 3. U-Boot 物理劫持 (锁定 1024M 引导链)
-# 审计结论：必须物理覆盖 Makefile 中的配置，确保救砖包内存定义正确
 UBOOT_MAKEFILE="package/boot/uboot-mediatek/Makefile"
 if [ -f "$UBOOT_MAKEFILE" ]; then
-    # 物理清理旧残留，防止重复注入
     sed -i '/curl -fsSL.*sl_3000/d' "$UBOOT_MAKEFILE"
-    # 在 Build/Configure 之后物理劫持远程 defconfig
     sed -i '/define Build\/Configure/a \
 \tcurl -fsSL https://raw.githubusercontent.com/ykm99999/66/sl3000-uboot-base/configs/mt7981_sl_3000-emmc_defconfig -o $(PKG_BUILD_DIR)/configs/mt7981_sl_3000-emmc_defconfig; \\' "$UBOOT_MAKEFILE"
 fi
+
+# 4. 物理熔断：彻底切断 MT7622 编译目标 (针对报错点的物理修复)
+# 审计结论：既然脚本没问题，那我们就用脚本“物理清理”掉源码里的报错文件
+find target/linux/mediatek/image/ -name "*.mk" | xargs sed -i '/elecom_wrc-2533gent/d'
+find target/linux/mediatek/image/ -name "*.mk" | xargs sed -i '/bananapi_bpi-r64/d'
