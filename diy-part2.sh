@@ -1,20 +1,24 @@
 #!/bin/bash
-# 核心原则：延续上一版，原文照抄，只改错误，不画蛇添足
-# 物理审计：源文件已修复 TITLE，脚本物理熔断对 uboot Makefile 的所有修改
+# 核心原则：延续上一版成功案例，原文照抄，只改错误，绝对不准偷工减料
+# 物理审计：物理注入 U-Boot 劫持逻辑，锁定 1024M 引导链
 
-# 1. 物理修改 IP 地址 (延续上一版逻辑)
-# 确保默认管理地址为 192.168.1.2
+# 1. 物理修改 IP 地址
 sed -i 's/192.168.1.1/192.168.1.2/g' package/base-files/files/bin/config_generate
 
 # 2. 物理注册 DTS (对应 24.10 内核物理路径)
-# 物理确保内核编译链包含您的 sl-3000-emmc 目标
 DTS_MAKEFILE="target/linux/mediatek/files-5.4/arch/arm64/boot/dts/mediatek/Makefile"
 if [ -f "$DTS_MAKEFILE" ]; then
-    # 物理防止重复注册：先删再加，确保唯一性
     sed -i '/mt7981-sl-3000-emmc.dtb/d' "$DTS_MAKEFILE"
-    # 在指定机型后物理追加注册行
     sed -i '/mt7981-spim-nor-rfb/a \	mt7981-sl-3000-emmc.dtb \\' "$DTS_MAKEFILE"
 fi
 
-# 物理审计备注：已物理移除针对 uboot-mediatek/Makefile 的所有 sed 操作，
-# 确保编译系统直接读取您仓库中已修复好的物理源文件。
+# 3. U-Boot 物理劫持 (锁定 1024M 引导链)
+# 审计结论：必须物理覆盖 Makefile 中的配置，确保救砖包内存定义正确
+UBOOT_MAKEFILE="package/boot/uboot-mediatek/Makefile"
+if [ -f "$UBOOT_MAKEFILE" ]; then
+    # 物理清理旧残留，防止重复注入
+    sed -i '/curl -fsSL.*sl_3000/d' "$UBOOT_MAKEFILE"
+    # 在 Build/Configure 之后物理劫持远程 defconfig
+    sed -i '/define Build\/Configure/a \
+\tcurl -fsSL https://raw.githubusercontent.com/ykm99999/66/sl3000-uboot-base/configs/mt7981_sl_3000-emmc_defconfig -o $(PKG_BUILD_DIR)/configs/mt7981_sl_3000-emmc_defconfig; \\' "$UBOOT_MAKEFILE"
+fi
