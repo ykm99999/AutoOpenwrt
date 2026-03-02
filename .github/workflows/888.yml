@@ -1,4 +1,4 @@
-# 核心原则：延续成功案例原文，仅物理修正输出路径
+# 核心原则：延续成功案例原文，仅物理修正失效的插件引用
 name: OpenWrt Builder
 
 on:
@@ -96,14 +96,12 @@ jobs:
       id: organize
       if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
-        # 物理对齐：24.10 分支物理路径为 targets/mediatek/mt7981
+        # 物理对齐：24.10 实际路径
         cd openwrt/bin/targets/mediatek/mt7981 || cd openwrt/bin/targets/mediatek/filogic
-        # 物理审计：创建临时目录，提取救砖三件套
         mkdir -p /tmp/COLLECT
         cp -f *preloader* /tmp/COLLECT/ 2>/dev/null || true
         cp -f *bl31*fip* /tmp/COLLECT/ 2>/dev/null || true
         cp -f *sysupgrade.bin /tmp/COLLECT/ 2>/dev/null || true
-        # 物理清理冗余文件，恢复救砖固件
         rm -rf packages
         cp -af /tmp/COLLECT/* . 2>/dev/null || true
         echo "FIRMWARE=$PWD" >> $GITHUB_ENV
@@ -132,8 +130,9 @@ jobs:
         body_path: release.txt
         files: ${{ env.FIRMWARE }}/*
 
+    # 物理修复：替换失效的 delete-workflow-runs 插件
     - name: Delete workflow runs
-      uses: Mattraider/delete-workflow-runs@main
+      uses: Mattraider/delete-workflow-runs@v2
       with:
         retain_days: 1
         keep_minimum_runs: 3
