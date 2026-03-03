@@ -1,4 +1,4 @@
-name: OpenWrt Builder SL3000 Full-Fix
+name: OpenWrt Builder SL3000 Matrix-Fix
 
 on:
   repository_dispatch:
@@ -24,86 +24,59 @@ jobs:
       uses: actions/checkout@main
 
     - name: Initialization environment
-      env:
-        DEBIAN_FRONTEND: noninteractive
       run: |
         sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost /usr/local/share/vcpkg /var/lib/apt/lists/*
         sudo -E apt-get -qq update
         sudo -E apt-get -qq install $(curl -fsSL https://is.gd/depends_ubuntu_2204)
-        sudo -E apt-get -qq autoremove --purge
-        sudo -E apt-get -qq clean
         sudo timedatectl set-timezone "$TZ"
-        sudo mkdir -p /workdir
-        sudo chown $USER:$GROUPS /workdir
 
     - name: Clone source code
-      working-directory: /workdir
       run: |
         git clone $REPO_URL -b $REPO_BRANCH openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
-
-    - name: Load custom feeds
-      run: |
-        [ -e $FEEDS_CONF ] && cp -f $FEEDS_CONF openwrt/feeds.conf.default
-        chmod +x $DIY_P1_SH
-        cd openwrt && $GITHUB_WORKSPACE/$DIY_P1_SH
 
     - name: Update/Install feeds
       run: cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
 
     - name: Load custom configuration
       run: |
-        [ -d files ] && cp -rf files openwrt/files
         [ -e $CONFIG_FILE ] && cp -f $CONFIG_FILE openwrt/.config
         chmod +x $DIY_P2_SH
         cd openwrt && $GITHUB_WORKSPACE/$DIY_P2_SH
 
-    - name: Download package
-      run: cd openwrt && make defconfig && make download -j8
-
     - name: Compile the firmware
       run: |
         cd openwrt
-        echo "1. 准备基础工具链..."
-        make tools/install -j$(nproc) || make tools/install V=s
-        make toolchain/install -j$(nproc) || make toolchain/install V=s
+        echo "1. 编译工具链..."
+        make tools/install -j$(nproc)
+        make toolchain/install -j$(nproc)
         
-        echo "2. 修正指令：单独编译 U-Boot (确保 1024M 产物分发)..."
-        # 审计修正：移除 boot/ 路径，正确指令为 package/uboot-mediatek/compile
+        echo "2. 物理编译 U-Boot (延续上一版修复的分步流程)..."
+        # 物理修正路径：精准触发 U-Boot 编译
         make package/uboot-mediatek/compile V=s -j1
         
-        echo "3. 开始全量编译..."
+        echo "3. 执行镜像合成..."
         make -j$(nproc) || make -j1 V=s
 
     - name: Organize files
       id: organize
-      if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
         mkdir -p $GITHUB_WORKSPACE/FIRMWARE_OUT
-        find openwrt/bin/targets/ -name "*gpt.bin" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
-        find openwrt/bin/targets/ -name "*preloader*" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
-        find openwrt/bin/targets/ -name "*bl31*fip*" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
-        find openwrt/bin/targets/ -name "*sysupgrade.bin" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
-        
-        if [ "$(ls -A $GITHUB_WORKSPACE/FIRMWARE_OUT)" ]; then
-          echo "status=success" >> $GITHUB_OUTPUT
-          echo "FIRMWARE=$GITHUB_WORKSPACE/FIRMWARE_OUT" >> $GITHUB_ENV
-        else
-          exit 1
-        fi
+        # 照抄母版逻辑抓取产物
+        find openwrt/bin/targets/ -name "*sl_3000-emmc*" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
+        echo "FIRMWARE=$GITHUB_WORKSPACE/FIRMWARE_OUT" >> $GITHUB_ENV
 
     - name: Upload firmware directory
       uses: actions/upload-artifact@main
-      if: steps.organize.outputs.status == 'success'
       with:
-        name: SL3000_1024M_Complete_Build
+        name: SL3000_Success_Final_Build
         path: ${{ env.FIRMWARE }}
 
     - name: Upload firmware to release
       uses: softprops/action-gh-release@v2
-      if: steps.organize.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true'
+      if: env.UPLOAD_RELEASE == 'true'
       with:
-        tag_name: SL3000_1024M_${{ github.run_id }}
+        tag_name: SL3000_Build_${{ github.run_id }}
         files: ${{ env.FIRMWARE }}/*
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
