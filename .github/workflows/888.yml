@@ -1,4 +1,4 @@
-name: OpenWrt Builder SL3000 Final Path-Fixed
+name: OpenWrt Builder SL3000 Final Fix
 
 on:
   repository_dispatch:
@@ -64,11 +64,14 @@ jobs:
     - name: Compile the firmware
       run: |
         cd openwrt
-        echo "1. 准备基础工具链 (确保产物分发路径可用)..."
+        echo "1. 物理准备基础工具链..."
         make tools/install -j$(nproc) || make tools/install V=s
         make toolchain/install -j$(nproc) || make toolchain/install V=s
         
-        echo "2. 开始全量构建 (路径纠偏模式)..."
+        echo "2. 优先强制编译 U-Boot 并分发产物..."
+        make package/boot/uboot-mediatek/compile V=s -j1
+        
+        echo "3. 开始全量编译..."
         make -j$(nproc) || make -j1 V=s
 
     - name: Organize files
@@ -76,11 +79,11 @@ jobs:
       if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
         mkdir -p $GITHUB_WORKSPACE/FIRMWARE_OUT
-        # 搜刮 ARTIFACTS
+        # 抓取救砖三件套
         find openwrt/bin/targets/ -name "*gpt.bin" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
         find openwrt/bin/targets/ -name "*preloader*" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
         find openwrt/bin/targets/ -name "*bl31*fip*" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
-        # 搜刮固件
+        # 抓取固件
         find openwrt/bin/targets/ -name "*sysupgrade.bin" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
         
         if [ "$(ls -A $GITHUB_WORKSPACE/FIRMWARE_OUT)" ]; then
@@ -94,7 +97,7 @@ jobs:
       uses: actions/upload-artifact@main
       if: steps.organize.outputs.status == 'success'
       with:
-        name: SL3000_eMMC_1024M_Final
+        name: SL3000_1024M_Final_Build
         path: ${{ env.FIRMWARE }}
 
     - name: Upload firmware to release
