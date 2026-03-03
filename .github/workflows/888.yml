@@ -33,16 +33,26 @@ jobs:
     - name: Clone source code
       run: |
         git clone $REPO_URL -b $REPO_BRANCH openwrt
-        ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
+
+    - name: Execute diy-part1.sh (before feeds)
+      run: |
+        if [ -f "$DIY_P1_SH" ]; then
+          chmod +x $DIY_P1_SH
+          cd openwrt
+          $GITHUB_WORKSPACE/$DIY_P1_SH
+        else
+          echo "diy-part1.sh not found, skipping"
+        fi
 
     - name: Update/Install feeds
       run: cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
 
-    - name: Load custom configuration
+    - name: Load custom configuration and execute diy-part2.sh
       run: |
-        [ -e $CONFIG_FILE ] && cp -f $CONFIG_FILE openwrt/.config
-        chmod +x $DIY_P2_SH
-        cd openwrt && $GITHUB_WORKSPACE/$DIY_P2_SH
+        cd openwrt
+        [ -e $GITHUB_WORKSPACE/$CONFIG_FILE ] && cp -f $GITHUB_WORKSPACE/$CONFIG_FILE .config
+        chmod +x $GITHUB_WORKSPACE/$DIY_P2_SH
+        $GITHUB_WORKSPACE/$DIY_P2_SH
 
     - name: Compile the firmware
       run: |
@@ -52,7 +62,6 @@ jobs:
         make toolchain/install -j$(nproc)
         
         echo "2. 物理编译 U-Boot (延续上一版修复的分步流程)..."
-        # 物理修正路径：精准触发 U-Boot 编译
         make package/uboot-mediatek/compile V=s -j1
         
         echo "3. 执行镜像合成..."
@@ -62,7 +71,6 @@ jobs:
       id: organize
       run: |
         mkdir -p $GITHUB_WORKSPACE/FIRMWARE_OUT
-        # 照抄母版逻辑抓取产物
         find openwrt/bin/targets/ -name "*sl_3000-emmc*" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
         echo "FIRMWARE=$GITHUB_WORKSPACE/FIRMWARE_OUT" >> $GITHUB_ENV
 
