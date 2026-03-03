@@ -1,4 +1,4 @@
-name: OpenWrt Builder SL3000
+name: OpenWrt Builder SL3000 Final
 
 on:
   repository_dispatch:
@@ -46,38 +46,30 @@ jobs:
       run: |
         [ -e $FEEDS_CONF ] && cp -f $FEEDS_CONF openwrt/feeds.conf.default
         chmod +x $DIY_P1_SH
-        cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P1_SH
+        cd openwrt && $GITHUB_WORKSPACE/$DIY_P1_SH
 
-    - name: Update feeds
-      run: cd openwrt && ./scripts/feeds update -a
-
-    - name: Install feeds
-      run: cd openwrt && ./scripts/feeds install -a
+    - name: Update/Install feeds
+      run: cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
 
     - name: Load custom configuration
       run: |
-        [ -e files ] && cp -rf files openwrt/files
+        # 物理拷贝 files 目录（包含自愈脚本）
+        [ -d files ] && cp -rf files openwrt/files
         [ -e $CONFIG_FILE ] && cp -f $CONFIG_FILE openwrt/.config
         chmod +x $DIY_P2_SH
-        cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P2_SH
+        cd openwrt && $GITHUB_WORKSPACE/$DIY_P2_SH
 
     - name: Download package
-      run: |
-        cd openwrt
-        make defconfig
-        make download -j8
+      run: cd openwrt && make defconfig && make download -j8
 
     - name: Compile the firmware
       run: |
         cd openwrt
-        # 1. 物理优先策略：先编译 U-Boot 包，确保 Preloader 和 FIP 产出并改名分发到 Staging
-        echo "正在优先编译 U-Boot 救砖全家桶..."
-        make package/boot/uboot-mediatek/compile V=s -j$(nproc)
+        echo "1. 物理补全基础工具链..."
+        make tools/install -j$(nproc) || make tools/install V=s
+        make toolchain/install -j$(nproc) || make toolchain/install V=s
         
-        # 2. 全量编译策略：合成最终镜像（此时主 Makefile 的 cat 宏能精准命中文件）
-        echo "正在执行全量编译与镜像合成..."
+        echo "2. 开始全量编译..."
         make -j$(nproc) || make -j1 V=s
 
     - name: Organize files
@@ -86,33 +78,31 @@ jobs:
       run: |
         mkdir -p $GITHUB_WORKSPACE/FIRMWARE_OUT
         # 抓取救砖三件套 (GPT, Preloader, FIP)
-        # ARTIFACTS 产生的文件不带 -squashfs- 复合后缀，直接匹配全名
-        find openwrt/bin/targets/ -name "*gpt.bin" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \; 2>/dev/null || true
-        find openwrt/bin/targets/ -name "*preloader*" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \; 2>/dev/null || true
-        find openwrt/bin/targets/ -name "*bl31*fip*" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \; 2>/dev/null || true
+        find openwrt/bin/targets/ -name "*gpt.bin" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
+        find openwrt/bin/targets/ -name "*preloader*" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
+        find openwrt/bin/targets/ -name "*bl31*fip*" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
         # 抓取升级固件
-        find openwrt/bin/targets/ -name "*sysupgrade.bin" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \; 2>/dev/null || true
+        find openwrt/bin/targets/ -name "*sysupgrade.bin" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
         
         if [ "$(ls -A $GITHUB_WORKSPACE/FIRMWARE_OUT)" ]; then
-          echo "FIRMWARE=$GITHUB_WORKSPACE/FIRMWARE_OUT" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT
+          echo "FIRMWARE=$GITHUB_WORKSPACE/FIRMWARE_OUT" >> $GITHUB_ENV
         else
-          echo "物理错误：未发现产出物，请检查 ARTIFACTS 逻辑是否与 Makefile 匹配。"
           exit 1
         fi
 
     - name: Upload firmware directory
       uses: actions/upload-artifact@main
-      if: steps.organize.outputs.status == 'success' && !cancelled()
+      if: steps.organize.outputs.status == 'success'
       with:
-        name: SL3000_eMMC_1024M_Firmware
+        name: SL3000_eMMC_1024M_Healing_Firmware
         path: ${{ env.FIRMWARE }}
 
     - name: Upload firmware to release
       uses: softprops/action-gh-release@v2
-      if: steps.organize.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true' && !cancelled()
+      if: steps.organize.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true'
       with:
-        tag_name: SL3000_${{ github.run_id }}
+        tag_name: SL3000_Healing_${{ github.run_id }}
         files: ${{ env.FIRMWARE }}/*
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
