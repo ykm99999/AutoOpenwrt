@@ -1,4 +1,4 @@
-name: OpenWrt Builder
+name: OpenWrt Builder SL3000
 
 on:
   repository_dispatch:
@@ -79,22 +79,23 @@ jobs:
       id: organize
       if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
-        # 物理审计：在 bin 目录下搜刮所有由 ARTIFACTS 生成的纯净救砖产物
+        # 物理审计：在 bin 目录下搜刮所有由 ARTIFACTS 生成的产物
         mkdir -p $GITHUB_WORKSPACE/FIRMWARE_OUT
         
         # 1. 抓取救砖三件套 (GPT, Preloader, FIP)
+        # ARTIFACTS 产生的文件通常不带 squashfs 后缀，直接匹配全名
         find openwrt/bin/targets/ -name "*gpt.bin" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \; 2>/dev/null || true
         find openwrt/bin/targets/ -name "*preloader*" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \; 2>/dev/null || true
         find openwrt/bin/targets/ -name "*bl31*fip*" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \; 2>/dev/null || true
         
-        # 2. 抓取系统升级固件 (sysupgrade.bin)
+        # 2. 抓取系统升级固件
         find openwrt/bin/targets/ -name "*sysupgrade.bin" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \; 2>/dev/null || true
         
         if [ "$(ls -A $GITHUB_WORKSPACE/FIRMWARE_OUT)" ]; then
           echo "FIRMWARE=$GITHUB_WORKSPACE/FIRMWARE_OUT" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT
         else
-          echo "物理错误：未发现产出物，请检查编译日志。"
+          echo "物理警告：未发现编译产出，请核对 ARTIFACTS 逻辑。"
           exit 1
         fi
 
@@ -102,14 +103,14 @@ jobs:
       uses: actions/upload-artifact@main
       if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
-        name: OpenWrt_firmware_sl3000_emmc
+        name: OpenWrt_SL3000_eMMC_1024M
         path: ${{ env.FIRMWARE }}
 
     - name: Upload firmware to release
       uses: softprops/action-gh-release@v2
       if: steps.organize.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true' && !cancelled()
       with:
-        tag_name: ${{ github.run_id }}
+        tag_name: SL3000_${{ github.run_id }}
         files: ${{ env.FIRMWARE }}/*
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
