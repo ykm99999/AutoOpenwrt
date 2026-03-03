@@ -79,7 +79,7 @@ jobs:
       id: organize
       if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
-        # 物理审计：在 bin 目录下搜刮所有由 ARTIFACTS 生成的救砖产物
+        # 物理审计：在 bin 目录下搜刮所有由 ARTIFACTS 生成的纯净救砖产物
         mkdir -p $GITHUB_WORKSPACE/FIRMWARE_OUT
         
         # 1. 抓取救砖三件套 (GPT, Preloader, FIP)
@@ -94,7 +94,7 @@ jobs:
           echo "FIRMWARE=$GITHUB_WORKSPACE/FIRMWARE_OUT" >> $GITHUB_ENV
           echo "status=success" >> $GITHUB_OUTPUT
         else
-          echo "物理警告：未发现编译产出，请检查编译日志。"
+          echo "物理错误：未发现产出物，请检查编译日志。"
           exit 1
         fi
 
@@ -102,7 +102,7 @@ jobs:
       uses: actions/upload-artifact@main
       if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
-        name: OpenWrt_firmware_sl3000
+        name: OpenWrt_firmware_sl3000_emmc
         path: ${{ env.FIRMWARE }}
 
     - name: Upload firmware to release
