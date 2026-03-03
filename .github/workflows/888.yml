@@ -64,11 +64,12 @@ jobs:
     - name: Compile the firmware
       run: |
         cd openwrt
-        echo "1. 物理优先准备工具链 (解决 ld-musl 缺失报错)..."
+        # 1. 物理准备基础工具
         make tools/install -j$(nproc) || make tools/install V=s
         make toolchain/install -j$(nproc) || make toolchain/install V=s
         
-        echo "2. 开始 MT7981 专项全量编译..."
+        # 2. 全量编译 (此时补丁已清空)
+        echo "开始 MT7981 1024M 固件编译..."
         make -j$(nproc) || make -j1 V=s
 
     - name: Organize files
@@ -76,11 +77,9 @@ jobs:
       if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
         mkdir -p $GITHUB_WORKSPACE/FIRMWARE_OUT
-        # 物理搜刮：GPT, Preloader, FIP 救砖包
         find openwrt/bin/targets/ -name "*gpt.bin" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
         find openwrt/bin/targets/ -name "*preloader*" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
         find openwrt/bin/targets/ -name "*bl31*fip*" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
-        # 搜刮：系统升级固件
         find openwrt/bin/targets/ -name "*sysupgrade.bin" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
         
         if [ "$(ls -A $GITHUB_WORKSPACE/FIRMWARE_OUT)" ]; then
@@ -94,14 +93,14 @@ jobs:
       uses: actions/upload-artifact@main
       if: steps.organize.outputs.status == 'success'
       with:
-        name: SL3000_eMMC_1024M_Clean_Build
+        name: SL3000_1024M_Clean_Firmware
         path: ${{ env.FIRMWARE }}
 
     - name: Upload firmware to release
       uses: softprops/action-gh-release@v2
       if: steps.organize.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true'
       with:
-        tag_name: SL3000_Clean_${{ github.run_id }}
+        tag_name: SL3000_Healing_${{ github.run_id }}
         files: ${{ env.FIRMWARE }}/*
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
