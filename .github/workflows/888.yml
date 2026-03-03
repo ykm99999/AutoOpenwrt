@@ -53,7 +53,6 @@ jobs:
 
     - name: Load custom configuration
       run: |
-        # 物理拷贝 files 目录（包含自愈脚本）
         [ -d files ] && cp -rf files openwrt/files
         [ -e $CONFIG_FILE ] && cp -f $CONFIG_FILE openwrt/.config
         chmod +x $DIY_P2_SH
@@ -65,11 +64,11 @@ jobs:
     - name: Compile the firmware
       run: |
         cd openwrt
-        echo "1. 物理补全基础工具链..."
+        echo "1. 物理优先准备工具链 (解决 ld-musl 缺失报错)..."
         make tools/install -j$(nproc) || make tools/install V=s
         make toolchain/install -j$(nproc) || make toolchain/install V=s
         
-        echo "2. 开始全量编译..."
+        echo "2. 开始 MT7981 专项全量编译..."
         make -j$(nproc) || make -j1 V=s
 
     - name: Organize files
@@ -77,11 +76,11 @@ jobs:
       if: env.UPLOAD_FIRMWARE == 'true' && !cancelled()
       run: |
         mkdir -p $GITHUB_WORKSPACE/FIRMWARE_OUT
-        # 抓取救砖三件套 (GPT, Preloader, FIP)
+        # 物理搜刮：GPT, Preloader, FIP 救砖包
         find openwrt/bin/targets/ -name "*gpt.bin" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
         find openwrt/bin/targets/ -name "*preloader*" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
         find openwrt/bin/targets/ -name "*bl31*fip*" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
-        # 抓取升级固件
+        # 搜刮：系统升级固件
         find openwrt/bin/targets/ -name "*sysupgrade.bin" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
         
         if [ "$(ls -A $GITHUB_WORKSPACE/FIRMWARE_OUT)" ]; then
@@ -95,14 +94,14 @@ jobs:
       uses: actions/upload-artifact@main
       if: steps.organize.outputs.status == 'success'
       with:
-        name: SL3000_eMMC_1024M_Healing_Firmware
+        name: SL3000_eMMC_1024M_Clean_Build
         path: ${{ env.FIRMWARE }}
 
     - name: Upload firmware to release
       uses: softprops/action-gh-release@v2
       if: steps.organize.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true'
       with:
-        tag_name: SL3000_Healing_${{ github.run_id }}
+        tag_name: SL3000_Clean_${{ github.run_id }}
         files: ${{ env.FIRMWARE }}/*
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
