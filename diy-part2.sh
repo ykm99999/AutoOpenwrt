@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e  # 遇到错误立即退出
+set -e
 
 echo "执行 diy-part2.sh：自定义配置修复"
 
@@ -44,7 +44,7 @@ echo "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y" >> .config
 sed -i '/CONFIG_PACKAGE_trusted-firmware-a-mt7981-emmc-ddr3/d' .config
 echo "CONFIG_PACKAGE_trusted-firmware-a-mt7981-emmc-ddr3=y" >> .config
 
-# 6. 规范化配置（生成完整 .config）
+# 6. 规范化配置
 make defconfig
 
 # 7. 注入自愈脚本
