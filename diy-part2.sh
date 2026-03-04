@@ -9,26 +9,62 @@ rm -rf package/boot/uboot-mediatek/patches/*
 # 2. 修改默认 IP 为 192.168.1.2
 sed -i 's/192.168.1.1/192.168.1.2/g' package/base-files/files/bin/config_generate
 
-# 3. 修复 uboot-mediatek Makefile 缺失的 TITLE 字段
+# 3. 完全重写 uboot-mediatek Makefile（使用新仓库和正确配置）
 UBOOT_MAKEFILE="package/boot/uboot-mediatek/Makefile"
 if [ -f "$UBOOT_MAKEFILE" ]; then
-    if ! grep -q "define Package/uboot-mediatek" "$UBOOT_MAKEFILE"; then
-        echo "警告：未找到 Package/uboot-mediatek 定义块，正在添加完整定义..."
-        # 添加空行分隔
-        echo >> "$UBOOT_MAKEFILE"
-        echo "define Package/uboot-mediatek" >> "$UBOOT_MAKEFILE"
-        echo "  SECTION:=boot" >> "$UBOOT_MAKEFILE"
-        echo "  CATEGORY:=Boot Loaders" >> "$UBOOT_MAKEFILE"
-        echo "  TITLE:=U-Boot for MediaTek MT7981 (SL 3000 eMMC)" >> "$UBOOT_MAKEFILE"
-        echo "  DEPENDS:=@TARGET_mediatek_mt7981" >> "$UBOOT_MAKEFILE"
-        echo "  URL:=https://github.com/ykm99999/66.git" >> "$UBOOT_MAKEFILE"
-        echo "endef" >> "$UBOOT_MAKEFILE"
-    else
-        if ! grep -q "TITLE:=" "$UBOOT_MAKEFILE"; then
-            echo "添加 TITLE 字段到 $UBOOT_MAKEFILE"
-            sed -i '/define Package\/uboot-mediatek/a \ \ TITLE:=U-Boot for MediaTek MT7981 (SL 3000 eMMC)' "$UBOOT_MAKEFILE"
-        fi
-    fi
+    echo "备份原 Makefile 并写入正确版本"
+    cp "$UBOOT_MAKEFILE" "$UBOOT_MAKEFILE.bak"
+    # 写入正确内容（使用 cat 和 Here Document）
+    cat > "$UBOOT_MAKEFILE" << 'EOF'
+include $(TOPDIR)/rules.mk
+include $(INCLUDE_DIR)/kernel.mk
+
+PKG_NAME:=uboot-mediatek
+PKG_VERSION:=2024.10
+PKG_RELEASE:=1
+
+PKG_SOURCE_PROTO:=git
+PKG_SOURCE_URL:=https://github.com/ykm888/66.git
+PKG_SOURCE_VERSION:=sl3000-uboot-base
+PKG_MIRROR_HASH:=skip
+
+PKG_MAINTAINER:=Gemini_AI
+
+include $(INCLUDE_DIR)/package.mk
+include $(INCLUDE_DIR)/u-boot.mk
+
+define U-Boot/Default
+  BUILD_TARGET:=mediatek
+  BUILD_SUBTARGET:=mt7981
+  BUILD_DEVICES:=sl_3000-emmc
+endef
+
+define U-Boot/mt7981_sl_3000-emmc
+  NAME:=SL 3000 (eMMC)
+  BUILD_DEVICES:=sl_3000-emmc
+  UBOOT_CONFIG:=mt7981_emmc          # 已根据新仓库的 defconfig 文件名修改
+  UBOOT_IMAGE:=u-boot.fip
+  BL2_IMAGE:=bl2.bin
+endef
+
+UBOOT_TARGETS:=mt7981_sl_3000-emmc
+
+define Package/uboot-mediatek
+  SECTION:=boot
+  CATEGORY:=Boot Loaders
+  TITLE:=U-Boot for MediaTek MT7981 (SL 3000 eMMC)
+  DEPENDS:=@TARGET_mediatek_mt7981
+  URL:=https://github.com/ykm888/66.git
+endef
+
+define Package/uboot-mediatek/install
+	$(INSTALL_DIR) $(STAGING_DIR_IMAGE)
+	$(CP) $(PKG_BUILD_DIR)/bl2.bin $(STAGING_DIR_IMAGE)/mt7981-emmc-ddr3-bl2.bin 2>/dev/null || true
+	$(CP) $(PKG_BUILD_DIR)/u-boot.fip $(STAGING_DIR_IMAGE)/mt7981-emmc-ddr3-u-boot.fip 2>/dev/null || true
+endef
+
+$(eval $(call BuildPackage,uboot-mediatek))
+EOF
 else
     echo "错误：$UBOOT_MAKEFILE 不存在！" >&2
     exit 1
