@@ -1,4 +1,4 @@
-name: OpenWrt Builder SL3000 Matrix-Fix
+name: OpenWrt Builder SL3000 Final Fix
 
 on:
   repository_dispatch:
@@ -30,19 +30,18 @@ jobs:
         sudo -E apt-get -qq install $(curl -fsSL https://is.gd/depends_ubuntu_2204)
         sudo timedatectl set-timezone "$TZ"
 
-    # 安装 libyaml-dev（可选，因已在 Makefile 中禁用 YAML，但保留无害）
-    - name: Install libyaml-dev
+    - name: Install libyaml-dev (optional, safe to keep)
       run: sudo apt-get install -y libyaml-dev
 
-    - name: Clone source code
+    - name: Clone main OpenWrt source
       run: |
         git clone $REPO_URL -b $REPO_BRANCH openwrt
 
-    # ===== 新增步骤：将 U-Boot 源码克隆到 src 目录（匹配 Makefile 中的 file://src）=====
+    # ===== 关键步骤：将 U-Boot 源码克隆到 Makefile 期望的 src 目录 =====
     - name: Clone U-Boot source to src/
       run: |
         git clone --depth 1 -b sl3000-uboot-base https://github.com/ykm888/66.git openwrt/package/boot/uboot-mediatek/src
-    # ============================================================================
+    # ====================================================================
 
     - name: Execute diy-part1.sh (before feeds)
       run: |
