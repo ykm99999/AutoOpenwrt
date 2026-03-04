@@ -3,18 +3,17 @@ set -e  # 遇到错误立即退出
 
 echo "执行 diy-part2.sh：自定义配置修复"
 
-# 1. 移除官方干扰补丁
+# 1. 移除官方干扰补丁（如果存在）
 rm -rf package/boot/uboot-mediatek/patches/*
 
 # 2. 修改默认 IP 为 192.168.1.2
 sed -i 's/192.168.1.1/192.168.1.2/g' package/base-files/files/bin/config_generate
 
-# 3. 在 mt7981.mk 中注册 SL-3000 设备
+# 3. 在 mt7981.mk 中注册 SL-3000 设备（如果尚未注册）
 MT7981_MK="target/linux/mediatek/image/mt7981.mk"
 if [ -f "$MT7981_MK" ]; then
     if ! grep -q "define Device/sl_3000-emmc" "$MT7981_MK"; then
         echo "在 $MT7981_MK 中添加 SL-3000 设备定义"
-        # 添加空行分隔
         echo >> "$MT7981_MK"
         echo "define Device/sl_3000-emmc" >> "$MT7981_MK"
         echo "  DEVICE_VENDOR := SL" >> "$MT7981_MK"
@@ -33,20 +32,22 @@ else
     exit 1
 fi
 
-# 4. 强制激活编译目标配置
+# 4. 强制激活 U-Boot 包和目标设备配置
 sed -i '/CONFIG_PACKAGE_uboot-mediatek/d' .config
 sed -i '/CONFIG_TARGET_IMAGE_uboot_mediatek/d' .config
 echo "CONFIG_PACKAGE_uboot-mediatek=y" >> .config
 echo "CONFIG_TARGET_IMAGE_uboot_mediatek_mt7981_sl_3000_emmc=y" >> .config
-
-# 确保目标设备被选中
 sed -i '/CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc/d' .config
 echo "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y" >> .config
 
-# 5. 规范化配置（生成完整 .config）
+# 5. 启用 ATF 依赖包（由 U-Boot Makefile 的 DEPENDS 指定）
+sed -i '/CONFIG_PACKAGE_trusted-firmware-a-mt7981-emmc-ddr3/d' .config
+echo "CONFIG_PACKAGE_trusted-firmware-a-mt7981-emmc-ddr3=y" >> .config
+
+# 6. 规范化配置（生成完整 .config）
 make defconfig
 
-# 6. 注入自愈脚本
+# 7. 注入自愈脚本
 mkdir -p files/usr/bin
 > files/usr/bin/self_healing.sh
 echo '#!/bin/sh' >> files/usr/bin/self_healing.sh
