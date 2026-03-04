@@ -30,6 +30,11 @@ jobs:
         sudo -E apt-get -qq install $(curl -fsSL https://is.gd/depends_ubuntu_2204)
         sudo timedatectl set-timezone "$TZ"
 
+    # ========== 新增步骤：安装 libyaml-dev ==========
+    - name: Install libyaml-dev (for U-Boot dtc)
+      run: sudo apt-get install -y libyaml-dev
+    # ==============================================
+
     - name: Clone source code
       run: |
         git clone $REPO_URL -b $REPO_BRANCH openwrt
