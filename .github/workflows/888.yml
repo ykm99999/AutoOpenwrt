@@ -7,49 +7,49 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     steps:
-      - name: Checkout Main
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          ref: main
 
-      - name: Initialization environment
+      - name: Init
         run: |
           sudo -E apt-get -qq update
           sudo -E apt-get -qq install $(curl -fsSL https://is.gd/depends_ubuntu_2204)
           sudo timedatectl set-timezone "Asia/Shanghai"
 
-      - name: Clone OpenWrt
+      - name: Clone
         run: git clone https://github.com/openwrt/openwrt -b openwrt-24.10 openwrt
 
-      - name: Update Feeds
+      - name: Feed
         run: cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
 
-      - name: Inject Custom Config
+      - name: Inject
         run: |
           chmod +x diy-part2.sh
           cd openwrt
           $GITHUB_WORKSPACE/diy-part2.sh
+          # 执行强制对齐
           make defconfig
 
-      - name: Build Tools & Toolchain
+      - name: Toolchain
         run: |
           cd openwrt
+          # 物理构建 ARM64 环境，必须先执行
           make tools/install -j$(nproc)
           make toolchain/install -j$(nproc)
 
-      - name: Build U-Boot (Fixed Path)
+      - name: U-Boot
         run: |
           cd openwrt
-          # 物理执行：跳过所有中间检测，直接编译目标
+          # 指定物理路径编译
           make package/boot/uboot-mediatek/compile V=s -j1
 
-      - name: Full Firmware Compilation
+      - name: Firmware
         run: |
           cd openwrt
           make -j$(nproc) || make -j1 V=s
 
-      - name: Upload Artifacts
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: OpenWrt_SL3000_Firmware
+          name: SL3000-Firmware
           path: openwrt/bin/targets/mediatek/mt7981/*.bin
