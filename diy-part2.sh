@@ -1,19 +1,19 @@
 #!/bin/bash
 
-# 1. 物理抹除官方 U-Boot 干扰项
+# 1. 物理清理：抹除官方 U-Boot 干扰，删除所有 patch 防止 512M 逻辑干扰 1024M
 rm -rf package/boot/uboot-mediatek/src
 rm -rf package/boot/uboot-mediatek/patches/*
 mkdir -p package/boot/uboot-mediatek/src
 
-# 2. 从 sl3000-uboot-base 分支拉取物理源码 (1024M 补丁版)
+# 2. 物理注入：拉取 sl3000-uboot-base 分支的 1024M 物理源码
 git clone --depth 1 -b sl3000-uboot-base https://github.com/ykm99999/AutoOpenwrt.git uboot_temp
 cp -rf uboot_temp/* package/boot/uboot-mediatek/src/
 rm -rf uboot_temp
 
-# 3. 物理重写 Makefile (解决 404 并对接 Artifact)
-cat <<EOF > package/boot/uboot-mediatek/Makefile
-include \$(TOPDIR)/rules.mk
-include \$(INCLUDE_DIR)/kernel.mk
+# 3. 物理修复 Makefile：彻底抹除 PKG_SOURCE 规避 404，对接 Artifact
+cat <<'EOF' > package/boot/uboot-mediatek/Makefile
+include $(TOPDIR)/rules.mk
+include $(INCLUDE_DIR)/kernel.mk
 
 PKG_NAME:=uboot-mediatek
 PKG_VERSION:=custom
@@ -23,16 +23,16 @@ PKG_SOURCE:=
 PKG_SOURCE_URL:=
 PKG_HASH:=skip
 
-include \$(INCLUDE_DIR)/package.mk
-include \$(INCLUDE_DIR)/u-boot.mk
-include \$(INCLUDE_DIR)/host-build.mk
+include $(INCLUDE_DIR)/package.mk
+include $(INCLUDE_DIR)/u-boot.mk
+include $(INCLUDE_DIR)/host-build.mk
 
 UBOOT_USE_INTREE_DTC:=1
 
 define Build/Prepare
-	rm -rf \$(PKG_BUILD_DIR)
-	mkdir -p \$(PKG_BUILD_DIR)
-	\$(CP) ./src/* \$(PKG_BUILD_DIR)/
+	rm -rf $(PKG_BUILD_DIR)
+	mkdir -p $(PKG_BUILD_DIR)
+	$(CP) ./src/* $(PKG_BUILD_DIR)/
 endef
 
 define Package/U-Boot
@@ -53,26 +53,26 @@ endef
 UBOOT_TARGETS := mt7981_sl_3000-emmc
 
 define Build/Compile
-	\$(call Build/Compile/U-Boot)
-	\$(STAGING_DIR_HOST)/bin/fiptool create \
-		--tb-fw \$(STAGING_DIR_IMAGE)/mt7981-emmc-ddr3-bl2.bin \
-		--soc-fw \$(STAGING_DIR_IMAGE)/mt7981-emmc-ddr3-bl31.bin \
-		--nt-fw \$(PKG_BUILD_DIR)/u-boot.bin \
-		\$(PKG_BUILD_DIR)/u-boot.fip
+	$(call Build/Compile/U-Boot)
+	$(STAGING_DIR_HOST)/bin/fiptool create \
+		--tb-fw $(STAGING_DIR_IMAGE)/mt7981-emmc-ddr3-bl2.bin \
+		--soc-fw $(STAGING_DIR_IMAGE)/mt7981-emmc-ddr3-bl31.bin \
+		--nt-fw $(PKG_BUILD_DIR)/u-boot.bin \
+		$(PKG_BUILD_DIR)/u-boot.fip
 endef
 
 define Build/InstallDev
-	\$(INSTALL_DIR) \$(STAGING_DIR_IMAGE)
-	\$(CP) \$(PKG_BUILD_DIR)/u-boot.fip \$(STAGING_DIR_IMAGE)/emmc-bl31-uboot.fip
+	$(INSTALL_DIR) $(STAGING_DIR_IMAGE)
+	$(CP) $(PKG_BUILD_DIR)/u-boot.fip $(STAGING_DIR_IMAGE)/emmc-bl31-uboot.fip
 endef
 
-\$(eval \$(call BuildPackage,U-Boot))
+$(eval $(call BuildPackage,U-Boot))
 EOF
 
-# 4. 物理注入 Device 定义到目标文件 (严格照抄用户提供段落)
+# 4. 物理注入 Device 定义 (严格延续上一版原文)
 DEVICE_FILE="target/linux/mediatek/image/mt7981.mk"
-sed -i '/define Device\/sl_3000-emmc/,/endef/d' $DEVICE_FILE
-cat <<'EOF' >> $DEVICE_FILE
+sed -i '/define Device\/sl_3000-emmc/,/endef/d' "$DEVICE_FILE"
+cat <<'EOF' >> "$DEVICE_FILE"
 
 define Device/sl_3000-emmc
   DEVICE_VENDOR := SL
@@ -101,7 +101,8 @@ endef
 TARGET_DEVICES += sl_3000-emmc
 EOF
 
-# 5. 注入 8000 行 Config 的核心标志位
+# 5. 【彻底解决架构冲突】物理锁定：先清除所有目标，再强制锁定 MT7981
+sed -i 's/CONFIG_TARGET_.*=y/# & is not set/g' .config
 echo "CONFIG_TARGET_mediatek=y" >> .config
 echo "CONFIG_TARGET_mediatek_mt7981=y" >> .config
 echo "CONFIG_TARGET_mediatek_mt7981_DEVICE_sl_3000-emmc=y" >> .config
