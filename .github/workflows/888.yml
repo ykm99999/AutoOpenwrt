@@ -1,4 +1,4 @@
-name: OpenWrt Builder SL3000 Matrix-Fix
+name: OpenWrt Builder SL3000 Same-Repo-Fix
 
 on:
   repository_dispatch:
@@ -7,12 +7,9 @@ on:
 env:
   REPO_URL: https://github.com/ykm99999/54
   REPO_BRANCH: 2410
-  FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: sl3000.config
-  DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
   UPLOAD_FIRMWARE: true
-  UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
 
 jobs:
@@ -25,7 +22,6 @@ jobs:
 
     - name: Initialization environment
       run: |
-        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost /usr/local/share/vcpkg /var/lib/apt/lists/*
         sudo -E apt-get -qq update
         sudo -E apt-get -qq install $(curl -fsSL https://is.gd/depends_ubuntu_2204)
         sudo timedatectl set-timezone "$TZ"
@@ -34,9 +30,6 @@ jobs:
       run: |
         git clone $REPO_URL -b $REPO_BRANCH openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
-
-    - name: Update/Install feeds
-      run: cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
 
     - name: Load custom configuration
       run: |
@@ -47,36 +40,24 @@ jobs:
     - name: Compile the firmware
       run: |
         cd openwrt
-        echo "1. 编译工具链..."
         make tools/install -j$(nproc)
         make toolchain/install -j$(nproc)
-        
-        echo "2. 物理编译 U-Boot (延续成功案例分步流程)..."
-        # 物理修正路径：解决 No rule to make target 错误
+        # 物理修正指令
         make package/uboot-mediatek/compile V=s -j1
-        
-        echo "3. 生成固件镜像..."
         make -j$(nproc) || make -j1 V=s
 
-    - name: Organize files
+    - name: Organize files (救砖全家桶)
       id: organize
       run: |
         mkdir -p $GITHUB_WORKSPACE/FIRMWARE_OUT
-        # 照抄母版逻辑抓取产物
-        find openwrt/bin/targets/ -name "*sl_3000-emmc*" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
+        find openwrt/bin/targets/ -name "*sysupgrade.bin" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
+        find openwrt/bin/targets/ -name "*gpt.bin" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
+        find openwrt/bin/targets/ -name "*preloader*" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
+        find openwrt/bin/targets/ -name "*bl31*fip*" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
         echo "FIRMWARE=$GITHUB_WORKSPACE/FIRMWARE_OUT" >> $GITHUB_ENV
 
-    - name: Upload firmware directory
+    - name: Upload Artifact
       uses: actions/upload-artifact@main
       with:
-        name: SL3000_Success_Final_Build
+        name: SL3000_1024M_Full_Kit
         path: ${{ env.FIRMWARE }}
-
-    - name: Upload firmware to release
-      uses: softprops/action-gh-release@v2
-      if: env.UPLOAD_RELEASE == 'true'
-      with:
-        tag_name: SL3000_Build_${{ github.run_id }}
-        files: ${{ env.FIRMWARE }}/*
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
