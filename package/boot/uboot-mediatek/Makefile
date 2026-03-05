@@ -8,7 +8,6 @@ PKG_RELEASE:=1
 PKG_SOURCE:=
 PKG_SOURCE_URL:=
 PKG_HASH:=skip
-PKG_MAINTAINER:=Gemini_AI
 
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/u-boot.mk
@@ -62,7 +61,7 @@ endef
 
 define Build/InstallDev
 	$(INSTALL_DIR) $(STAGING_DIR_IMAGE)
-	# 物理锁定救砖件命名：必须对齐 Device/sl_3000-emmc 宏
+	# 物理修复：重命名救砖件以匹配 Device 定义，防止镜像合成失败
 	$(CP) $(STAGING_DIR_IMAGE)/mt7981-emmc-ddr3-bl2.bin $(STAGING_DIR_IMAGE)/emmc-preloader.bin
 	$(CP) $(PKG_BUILD_DIR)/$(BUILD_VARIANT)/u-boot.fip $(STAGING_DIR_IMAGE)/emmc-bl31-uboot.fip
 	$(CP) $(PKG_BUILD_DIR)/$(BUILD_VARIANT)/u-boot.fip $(STAGING_DIR_IMAGE)/u-boot.fip
