@@ -1,0 +1,48 @@
+#
+# 名称：物理自动同步与分支创建
+# 功能：解决本地无分支报错，物理对齐上游并自动触发后续构建
+#
+
+name: Sync Source Repository
+
+on:
+  workflow_dispatch:      # 手动启动
+  repository_dispatch:    # 自动信号启动
+    types: [sync-source]
+
+jobs:
+  update_source:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # 物理隔离：不指定分支，确保初始化环境不报错
+
+      - name: 配置 Git 信息
+        run: |
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+
+      - name: 物理创建并同步 2410 分支
+        run: |
+          # 1. 物理添加上游源仓库
+          git remote add upstream https://github.com/padavanonly/immortalwrt-mt798x-24.10.git
+          
+          # 2. 物理抓取上游所有分支数据
+          git fetch upstream
+          
+          # 3. 核心修复：物理强制创建本地 2410 分支并对齐上游
+          # -B 参数确保：若分支不存在则创建，若存在则强制覆盖物理内容
+          git checkout -B 2410 upstream/2410
+          
+          # 4. 验证物理状态
+          echo "2410 分支已物理就绪，准备自动推送到本人仓库。"
+
+      - name: 物理推送触发构建
+        uses: ad-m/github-push-action@master
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: 2410
+          force: true # 物理强制推送，确保仓库产生 2410 分支并触发 Actions
