@@ -5,6 +5,7 @@ PKG_NAME:=uboot-mediatek
 PKG_VERSION:=custom
 PKG_RELEASE:=1
 
+# 物理修复：禁止从远程下载，强制识别本地源码
 PKG_SOURCE:=
 PKG_SOURCE_URL:=
 PKG_HASH:=skip
@@ -17,8 +18,9 @@ UBOOT_USE_INTREE_DTC:=1
 UBOOT_MAKE_FLAGS += NO_YAML=1
 
 define Build/Prepare
+	# 物理准备：将 diy-part2.sh 拷入的源码移至编译目录
 	mkdir -p $(PKG_BUILD_DIR)
-	cp -fpR $(CURDIR)/src/. $(PKG_BUILD_DIR)/
+	$(CP) ./src/* $(PKG_BUILD_DIR)/
 endef
 
 define Package/U-Boot
@@ -50,8 +52,8 @@ define Build/fip-image
 	$(STAGING_DIR_HOST)/bin/fiptool create \
 		--tb-fw $$BL2_BIN \
 		--soc-fw $$BL31_BIN \
-		--nt-fw $(PKG_BUILD_DIR)/$(BUILD_VARIANT)/u-boot.bin \
-		$(PKG_BUILD_DIR)/$(BUILD_VARIANT)/u-boot.fip
+		--nt-fw $(PKG_BUILD_DIR)/u-boot.bin \
+		$(PKG_BUILD_DIR)/u-boot.fip
 endef
 
 define Build/Compile
@@ -61,10 +63,10 @@ endef
 
 define Build/InstallDev
 	$(INSTALL_DIR) $(STAGING_DIR_IMAGE)
-	# 物理修复：重命名救砖件以匹配 Device 定义，防止镜像合成失败
+	# 物理同步救砖件命名
 	$(CP) $(STAGING_DIR_IMAGE)/mt7981-emmc-ddr3-bl2.bin $(STAGING_DIR_IMAGE)/emmc-preloader.bin
-	$(CP) $(PKG_BUILD_DIR)/$(BUILD_VARIANT)/u-boot.fip $(STAGING_DIR_IMAGE)/emmc-bl31-uboot.fip
-	$(CP) $(PKG_BUILD_DIR)/$(BUILD_VARIANT)/u-boot.fip $(STAGING_DIR_IMAGE)/u-boot.fip
+	$(CP) $(PKG_BUILD_DIR)/u-boot.fip $(STAGING_DIR_IMAGE)/emmc-bl31-uboot.fip
+	$(CP) $(PKG_BUILD_DIR)/u-boot.fip $(STAGING_DIR_IMAGE)/u-boot.fip
 endef
 
 $(eval $(call BuildPackage,U-Boot))
