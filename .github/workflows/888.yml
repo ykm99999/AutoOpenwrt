@@ -15,63 +15,55 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-    - name: Checkout Main
+    - name: Checkout
       uses: actions/checkout@v4
       with:
         ref: main
 
-    - name: Initialization environment
+    - name: Init Env
       run: |
         sudo -E apt-get -qq update
         sudo -E apt-get -qq install $(curl -fsSL https://is.gd/depends_ubuntu_2204)
         sudo timedatectl set-timezone "$TZ"
-        sudo mkdir -p /workdir
-        sudo chown $USER:$GROUPS /workdir
 
     - name: Clone OpenWrt
-      working-directory: /workdir
       run: |
         git clone $REPO_URL -b $REPO_BRANCH openwrt
-        ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
-    - name: Update & Install Feeds
+    - name: Update Feeds
       run: |
         cd openwrt
         ./scripts/feeds update -a
         ./scripts/feeds install -a
 
-    - name: Load Config & DIY
+    - name: Load Config & DIY (Crucial step)
       run: |
         [ -e $CONFIG_FILE ] && cp $CONFIG_FILE openwrt/.config
         chmod +x $DIY_P2_SH
         cd openwrt
         $GITHUB_WORKSPACE/$DIY_P2_SH
-        # 物理修正：强制刷新 defconfig 建立 ARM64 依赖树
+        # 先执行 defconfig 锁定 target
         make defconfig
 
-    - name: Compile Toolchain & U-Boot
+    - name: Download PKG
       run: |
         cd openwrt
-        # 1. 物理构建 ARM64 基础环境
+        # 跳过空文件的下载报错
+        make download -j8 || true
+
+    - name: Final Compile
+      run: |
+        cd openwrt
+        # 强制编译工具链
         make tools/install -j$(nproc)
         make toolchain/install -j$(nproc)
-        
-        # 2. 物理编译 1024M U-Boot
-        echo "Building 1024M U-Boot..."
+        # 编译 U-Boot
         make package/boot/uboot-mediatek/compile V=s -j1
-        
-        # 3. 固件全量编译
-        echo "Building Full Firmware..."
+        # 全量编译
         make -j$(nproc) || make -j1 V=s
 
-    - name: Organize Artifacts
-      if: success()
-      run: |
-        cd openwrt/bin/targets/*/*
-        echo "FIRMWARE=$PWD" >> $GITHUB_ENV
-
-    - name: Upload Firmware
+    - name: Upload
       uses: actions/upload-artifact@v4
       with:
-        name: OpenWrt_SL3000_eMMC
-        path: ${{ env.FIRMWARE }}/*.bin
+        name: SL3000-Firmware
+        path: openwrt/bin/targets/mediatek/mt7981/*.bin
