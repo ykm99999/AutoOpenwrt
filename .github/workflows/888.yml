@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-    - name: Checkout Main Branch
+    - name: Checkout
       uses: actions/checkout@v4
       with:
         ref: main
@@ -79,22 +79,11 @@ jobs:
       id: compile
       run: |
         cd openwrt
-        echo -e "$(nproc) thread compile"
-        # 物理执行：先编译 U-Boot 相关依赖，再执行全局编译
+        echo "$(nproc) thread compile"
+        # 物理执行：单独编译 U-Boot 相关依赖，防止主循环失败
         make package/boot/uboot-mediatek/compile V=s -j1
         make -j$(nproc) || make -j1 || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
-
-    - name: Check space usage
-      if: (!cancelled())
-      run: df -hT
-
-    - name: Upload bin directory
-      uses: actions/upload-artifact@v4
-      if: steps.compile.outputs.status == 'success' && env:UPLOAD_BIN_DIR == 'true'
-      with:
-        name: OpenWrt_bin${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
-        path: openwrt/bin
 
     - name: Organize files
       id: organize
@@ -109,5 +98,5 @@ jobs:
       uses: actions/upload-artifact@v4
       if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
-        name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        name: OpenWrt_firmware_sl3000
         path: ${{ env.FIRMWARE }}
