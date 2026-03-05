@@ -5,7 +5,6 @@ on:
   workflow_dispatch:
 
 env:
-  # 【物理校准】根据您的指示，分支名为 2410
   REPO_URL: https://github.com/ykm99999/AutoOpenwrt.git
   REPO_BRANCH: 2410
   FEEDS_CONF: feeds.conf.default
@@ -43,7 +42,6 @@ jobs:
       working-directory: /workdir
       run: |
         df -hT $PWD
-        # 物理克隆 2410 分支
         git clone $REPO_URL -b $REPO_BRANCH openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
@@ -82,8 +80,7 @@ jobs:
       run: |
         cd openwrt
         echo -e "$(nproc) thread compile"
-        # 补丁保全：预编译 U-Boot
-        make package/boot/uboot-mediatek/compile V=s -j1
+        # 【物理恢复】完全回归成功案例的原生步骤，不提前单独编译 U-Boot
         make -j$(nproc) || make -j1 || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
