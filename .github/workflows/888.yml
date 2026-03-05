@@ -1,69 +1,53 @@
-name: OpenWrt Build SL3000
+name: Build SL3000
 
 on:
   workflow_dispatch:
 
-env:
-  REPO_URL: https://github.com/openwrt/openwrt
-  REPO_BRANCH: openwrt-24.10
-  CONFIG_FILE: .config
-  DIY_P2_SH: diy-part2.sh
-  TZ: Asia/Shanghai
-
 jobs:
   build:
     runs-on: ubuntu-22.04
-
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        ref: main
+      - uses: actions/checkout@v4
+      
+      - name: Init
+        run: |
+          sudo -E apt-get -qq update
+          sudo -E apt-get -qq install $(curl -fsSL https://is.gd/depends_ubuntu_2204)
+          
+      - name: Clone
+        run: git clone https://github.com/openwrt/openwrt -b openwrt-24.10 openwrt
+          
+      - name: Feed
+        run: cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
+        
+      - name: Inject
+        run: |
+          chmod +x diy-part2.sh
+          cd openwrt
+          $GITHUB_WORKSPACE/diy-part2.sh
+          # 强制生成种子配置
+          make defconfig
+          
+      - name: Build Toolchain
+        run: |
+          cd openwrt
+          # 必须先执行这一步，否则 U-Boot 找不到 aarch64 编译器
+          make tools/install -j$(nproc)
+          make toolchain/install -j$(nproc)
+          
+      - name: Build U-Boot
+        run: |
+          cd openwrt
+          # 指定架构，强制执行
+          make package/boot/uboot-mediatek/compile V=s -j1
+          
+      - name: Build Firmware
+        run: |
+          cd openwrt
+          make -j$(nproc) || make -j1 V=s
 
-    - name: Init Env
-      run: |
-        sudo -E apt-get -qq update
-        sudo -E apt-get -qq install $(curl -fsSL https://is.gd/depends_ubuntu_2204)
-        sudo timedatectl set-timezone "$TZ"
-
-    - name: Clone OpenWrt
-      run: |
-        git clone $REPO_URL -b $REPO_BRANCH openwrt
-
-    - name: Update Feeds
-      run: |
-        cd openwrt
-        ./scripts/feeds update -a
-        ./scripts/feeds install -a
-
-    - name: Load Config & DIY (Crucial step)
-      run: |
-        [ -e $CONFIG_FILE ] && cp $CONFIG_FILE openwrt/.config
-        chmod +x $DIY_P2_SH
-        cd openwrt
-        $GITHUB_WORKSPACE/$DIY_P2_SH
-        # 先执行 defconfig 锁定 target
-        make defconfig
-
-    - name: Download PKG
-      run: |
-        cd openwrt
-        # 跳过空文件的下载报错
-        make download -j8 || true
-
-    - name: Final Compile
-      run: |
-        cd openwrt
-        # 强制编译工具链
-        make tools/install -j$(nproc)
-        make toolchain/install -j$(nproc)
-        # 编译 U-Boot
-        make package/boot/uboot-mediatek/compile V=s -j1
-        # 全量编译
-        make -j$(nproc) || make -j1 V=s
-
-    - name: Upload
-      uses: actions/upload-artifact@v4
-      with:
-        name: SL3000-Firmware
-        path: openwrt/bin/targets/mediatek/mt7981/*.bin
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: SL3000-Image
+          path: openwrt/bin/targets/mediatek/mt7981/*.bin
