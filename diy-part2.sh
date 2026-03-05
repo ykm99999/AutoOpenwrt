@@ -1,16 +1,16 @@
 #!/bin/bash
 
-# 1. 物理清理：抹除官方 U-Boot 干扰，删除所有 patch 防止 512M 逻辑干扰 1024M
+# 1. 物理环境清理与源码注入
 rm -rf package/boot/uboot-mediatek/src
 rm -rf package/boot/uboot-mediatek/patches/*
 mkdir -p package/boot/uboot-mediatek/src
 
-# 2. 物理注入：拉取 sl3000-uboot-base 分支的 1024M 物理源码
+# 2. 拉取物理源码
 git clone --depth 1 -b sl3000-uboot-base https://github.com/ykm99999/AutoOpenwrt.git uboot_temp
 cp -rf uboot_temp/* package/boot/uboot-mediatek/src/
 rm -rf uboot_temp
 
-# 3. 物理修复 Makefile：彻底抹除 PKG_SOURCE 规避 404，对接 Artifact
+# 3. 物理修复 Makefile (彻底屏蔽下载逻辑)
 cat <<'EOF' > package/boot/uboot-mediatek/Makefile
 include $(TOPDIR)/rules.mk
 include $(INCLUDE_DIR)/kernel.mk
@@ -19,6 +19,7 @@ PKG_NAME:=uboot-mediatek
 PKG_VERSION:=custom
 PKG_RELEASE:=1
 
+# 物理物理物理：完全禁用 PKG_SOURCE 相关定义，防止触发 download.pl
 PKG_SOURCE:=
 PKG_SOURCE_URL:=
 PKG_HASH:=skip
@@ -30,6 +31,7 @@ include $(INCLUDE_DIR)/host-build.mk
 UBOOT_USE_INTREE_DTC:=1
 
 define Build/Prepare
+	# 强制清理旧目录并物理拷贝本地 src
 	rm -rf $(PKG_BUILD_DIR)
 	mkdir -p $(PKG_BUILD_DIR)
 	$(CP) ./src/* $(PKG_BUILD_DIR)/
@@ -69,7 +71,11 @@ endef
 $(eval $(call BuildPackage,U-Boot))
 EOF
 
-# 4. 物理注入 Device 定义 (严格延续上一版原文)
+# 4. 【关键：物理欺骗】伪造下载成功的标记文件，防止 curl 404
+mkdir -p dl
+touch dl/uboot-mediatek-custom.tar.bz2
+
+# 5. 注入 Device 定义 (延续上一版)
 DEVICE_FILE="target/linux/mediatek/image/mt7981.mk"
 sed -i '/define Device\/sl_3000-emmc/,/endef/d' "$DEVICE_FILE"
 cat <<'EOF' >> "$DEVICE_FILE"
@@ -101,7 +107,7 @@ endef
 TARGET_DEVICES += sl_3000-emmc
 EOF
 
-# 5. 【彻底解决架构冲突】物理锁定：先清除所有目标，再强制锁定 MT7981
+# 6. 物理锁定架构
 sed -i 's/CONFIG_TARGET_.*=y/# & is not set/g' .config
 echo "CONFIG_TARGET_mediatek=y" >> .config
 echo "CONFIG_TARGET_mediatek_mt7981=y" >> .config
