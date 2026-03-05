@@ -1,4 +1,4 @@
-name: OpenWrt Builder SL3000 Same-Repo-Fix
+name: OpenWrt Builder SL3000 Matrix-Final
 
 on:
   repository_dispatch:
@@ -7,9 +7,12 @@ on:
 env:
   REPO_URL: https://github.com/ykm99999/54
   REPO_BRANCH: 2410
+  FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: sl3000.config
+  DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
   UPLOAD_FIRMWARE: true
+  UPLOAD_RELEASE: true
   TZ: Asia/Shanghai
 
 jobs:
@@ -22,6 +25,7 @@ jobs:
 
     - name: Initialization environment
       run: |
+        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/boost /usr/local/share/vcpkg /var/lib/apt/lists/*
         sudo -E apt-get -qq update
         sudo -E apt-get -qq install $(curl -fsSL https://is.gd/depends_ubuntu_2204)
         sudo timedatectl set-timezone "$TZ"
@@ -31,8 +35,18 @@ jobs:
         git clone $REPO_URL -b $REPO_BRANCH openwrt
         ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
+    - name: Load custom feeds
+      run: |
+        [ -e $FEEDS_CONF ] && cp -f $FEEDS_CONF openwrt/feeds.conf.default
+        chmod +x $DIY_P1_SH
+        cd openwrt && $GITHUB_WORKSPACE/$DIY_P1_SH
+
+    - name: Update/Install feeds
+      run: cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
+
     - name: Load custom configuration
       run: |
+        [ -d files ] && cp -rf files openwrt/files
         [ -e $CONFIG_FILE ] && cp -f $CONFIG_FILE openwrt/.config
         chmod +x $DIY_P2_SH
         cd openwrt && $GITHUB_WORKSPACE/$DIY_P2_SH
@@ -42,22 +56,44 @@ jobs:
         cd openwrt
         make tools/install -j$(nproc)
         make toolchain/install -j$(nproc)
-        # 物理修正指令
+        
+        echo "物理编译 1024M 专用 U-Boot (包含救砖件生成)..."
+        # 物理修正：路径必须对齐 package/ 索引
         make package/uboot-mediatek/compile V=s -j1
+        
+        echo "执行全量镜像合成..."
         make -j$(nproc) || make -j1 V=s
 
-    - name: Organize files (救砖全家桶)
+    - name: Organize files (救砖全家桶全量抓取)
       id: organize
       run: |
         mkdir -p $GITHUB_WORKSPACE/FIRMWARE_OUT
+        # 延续母版设置，物理搜寻所有关键组件
         find openwrt/bin/targets/ -name "*sysupgrade.bin" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
         find openwrt/bin/targets/ -name "*gpt.bin" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
         find openwrt/bin/targets/ -name "*preloader*" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
         find openwrt/bin/targets/ -name "*bl31*fip*" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
-        echo "FIRMWARE=$GITHUB_WORKSPACE/FIRMWARE_OUT" >> $GITHUB_ENV
+        find openwrt/bin/targets/ -name "*factory.img*" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
+        
+        if [ "$(ls -A $GITHUB_WORKSPACE/FIRMWARE_OUT)" ]; then
+          echo "status=success" >> $GITHUB_OUTPUT
+          echo "FIRMWARE=$GITHUB_WORKSPACE/FIRMWARE_OUT" >> $GITHUB_ENV
+        else
+          exit 1
+        fi
 
     - name: Upload Artifact
       uses: actions/upload-artifact@main
+      if: steps.organize.outputs.status == 'success'
       with:
         name: SL3000_1024M_Full_Kit
         path: ${{ env.FIRMWARE }}
+
+    - name: Upload Release
+      uses: softprops/action-gh-release@v2
+      if: steps.organize.outputs.status == 'success' && env.UPLOAD_RELEASE == 'true'
+      with:
+        tag_name: SL3000_Recovery_Kit_${{ github.run_id }}
+        files: ${{ env.FIRMWARE }}/*
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
