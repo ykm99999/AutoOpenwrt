@@ -1,16 +1,16 @@
 #!/bin/bash
 
-# 1. 物理环境清理与源码注入
+# 1. 物理环境清理
 rm -rf package/boot/uboot-mediatek/src
 rm -rf package/boot/uboot-mediatek/patches/*
 mkdir -p package/boot/uboot-mediatek/src
 
-# 2. 拉取物理源码
+# 2. 拉取 sl3000-uboot-base 源码
 git clone --depth 1 -b sl3000-uboot-base https://github.com/ykm99999/AutoOpenwrt.git uboot_temp
 cp -rf uboot_temp/* package/boot/uboot-mediatek/src/
 rm -rf uboot_temp
 
-# 3. 物理修复 Makefile (彻底屏蔽下载逻辑)
+# 3. 彻底重写 Makefile (解决路径锁定问题)
 cat <<'EOF' > package/boot/uboot-mediatek/Makefile
 include $(TOPDIR)/rules.mk
 include $(INCLUDE_DIR)/kernel.mk
@@ -19,19 +19,19 @@ PKG_NAME:=uboot-mediatek
 PKG_VERSION:=custom
 PKG_RELEASE:=1
 
-# 物理物理物理：完全禁用 PKG_SOURCE 相关定义，防止触发 download.pl
+# 物理截断下载逻辑
 PKG_SOURCE:=
 PKG_SOURCE_URL:=
 PKG_HASH:=skip
+
+# 关键：物理强制指定构建目录，不随架构变动而产生 path 不存在的错误
+PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)
 
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/u-boot.mk
 include $(INCLUDE_DIR)/host-build.mk
 
-UBOOT_USE_INTREE_DTC:=1
-
 define Build/Prepare
-	# 强制清理旧目录并物理拷贝本地 src
 	rm -rf $(PKG_BUILD_DIR)
 	mkdir -p $(PKG_BUILD_DIR)
 	$(CP) ./src/* $(PKG_BUILD_DIR)/
@@ -71,11 +71,7 @@ endef
 $(eval $(call BuildPackage,U-Boot))
 EOF
 
-# 4. 【关键：物理欺骗】伪造下载成功的标记文件，防止 curl 404
-mkdir -p dl
-touch dl/uboot-mediatek-custom.tar.bz2
-
-# 5. 注入 Device 定义 (延续上一版)
+# 4. 物理注入 Device 定义 (延续上一版)
 DEVICE_FILE="target/linux/mediatek/image/mt7981.mk"
 sed -i '/define Device\/sl_3000-emmc/,/endef/d' "$DEVICE_FILE"
 cat <<'EOF' >> "$DEVICE_FILE"
@@ -107,8 +103,15 @@ endef
 TARGET_DEVICES += sl_3000-emmc
 EOF
 
-# 6. 物理锁定架构
-sed -i 's/CONFIG_TARGET_.*=y/# & is not set/g' .config
-echo "CONFIG_TARGET_mediatek=y" >> .config
-echo "CONFIG_TARGET_mediatek_mt7981=y" >> .config
-echo "CONFIG_TARGET_mediatek_mt7981_DEVICE_sl_3000-emmc=y" >> .config
+# 5. 【终极修复】粉碎所有旧配置，强制重写 MT7981 核心
+true > .config
+cat <<EOF >> .config
+CONFIG_TARGET_mediatek=y
+CONFIG_TARGET_mediatek_mt7981=y
+CONFIG_TARGET_mediatek_mt7981_DEVICE_sl_3000-emmc=y
+CONFIG_PACKAGE_uboot-mediatek=y
+EOF
+
+# 6. 物理欺骗下载
+mkdir -p dl
+touch dl/uboot-mediatek-custom.tar.bz2
