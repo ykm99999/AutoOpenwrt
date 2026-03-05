@@ -1,16 +1,15 @@
 #!/bin/bash
 
-# 1. 物理环境清理
+# 1. 物理环境准备
 rm -rf package/boot/uboot-mediatek/src
-rm -rf package/boot/uboot-mediatek/patches/*
 mkdir -p package/boot/uboot-mediatek/src
 
-# 2. 物理注入已经修复好的补丁源码 (sl3000-uboot-base 分支)
+# 2. U-Boot 克隆设置：延续 sl3000-uboot-base 物理补丁
 git clone --depth 1 -b sl3000-uboot-base https://github.com/ykm99999/AutoOpenwrt.git uboot_temp
 cp -rf uboot_temp/* package/boot/uboot-mediatek/src/
 rm -rf uboot_temp
 
-# 3. 彻底重写 Makefile：确保补丁能够编译并物理对齐路径
+# 3. 物理重写 Makefile：解决目录幻觉，锁定编译路径
 cat <<'EOF' > package/boot/uboot-mediatek/Makefile
 include $(TOPDIR)/rules.mk
 include $(INCLUDE_DIR)/kernel.mk
@@ -23,7 +22,7 @@ PKG_SOURCE:=
 PKG_SOURCE_URL:=
 PKG_HASH:=skip
 
-# 【物理核心修复】：强行锁定构建路径，解决 touch 报错，确保补丁产物位置固定
+# 关键：锁定物理路径，不准系统在 build_dir 里乱加架构后缀
 PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)
 
 include $(INCLUDE_DIR)/package.mk
@@ -74,7 +73,7 @@ endef
 $(eval $(call BuildPackage,U-Boot))
 EOF
 
-# 4. 物理注入 Device 定义 (延续 1024M 规格，严禁删改)
+# 4. Device 定义：维持 1024M 规格
 DEVICE_FILE="target/linux/mediatek/image/mt7981.mk"
 sed -i '/define Device\/sl_3000-emmc/,/endef/d' "$DEVICE_FILE"
 cat <<'EOF' >> "$DEVICE_FILE"
@@ -94,4 +93,18 @@ define Device/sl_3000-emmc
   KERNEL_INITRAMFS_SUFFIX := -recovery.itb
   IMAGES := sysupgrade.bin factory.img.gz
   IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
-  ARTIFACTS := emmc-gpt.bin emmc-preloader
+  ARTIFACTS := emmc-gpt.bin emmc-preloader.bin emmc-bl31-uboot.fip
+  ARTIFACT/emmc-gpt.bin := mt798x-gpt emmc
+  ARTIFACT/emmc-preloader.bin := mt7981-bl2 emmc-ddr3
+  ARTIFACT/emmc-bl31-uboot.fip := mt7981-bl31-uboot emmc-ddr3
+  IMAGE/factory.img.gz := mt798x-gpt emmc |\
+	pad-to 17k | mt7981-bl2 emmc-ddr3 |\
+	pad-to 6656k | mt7981-bl31-uboot emmc-ddr3 |\
+	pad-to 64M | append-image squashfs-sysupgrade.itb | gzip
+endef
+TARGET_DEVICES += sl_3000-emmc
+EOF
+
+# 5. 屏蔽 404
+mkdir -p dl
+touch dl/uboot-mediatek-custom.tar.bz2
