@@ -1,4 +1,4 @@
-name: OpenWrt Builder SL3000 Recovery-Ready
+name: OpenWrt Builder SL3000 Recovery-Kit
 
 on:
   repository_dispatch:
@@ -47,17 +47,20 @@ jobs:
     - name: Compile the firmware
       run: |
         cd openwrt
+        echo "1. 编译基础工具链..."
         make tools/install -j$(nproc)
         make toolchain/install -j$(nproc)
-        # 物理修正指令路径，确保命中 package/ 编译目标
+        
+        echo "2. 物理编译 1024M 魔改 U-Boot..."
         make package/uboot-mediatek/compile V=s -j1
+        
+        echo "3. 固件全量合成..."
         make -j$(nproc) || make -j1 V=s
 
     - name: Organize files (救砖全家桶全量抓取)
       id: organize
       run: |
         mkdir -p $GITHUB_WORKSPACE/FIRMWARE_OUT
-        # 原文照抄母版逻辑，物理搜寻所有 ARTIFACT
         find openwrt/bin/targets/ -name "*sysupgrade.bin" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
         find openwrt/bin/targets/ -name "*gpt.bin" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
         find openwrt/bin/targets/ -name "*preloader*" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
