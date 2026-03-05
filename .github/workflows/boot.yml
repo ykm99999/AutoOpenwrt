@@ -1,0 +1,63 @@
+name: U-Boot-物理同步并自动创建分支
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build_and_push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 物理签入跳板
+        uses: actions/checkout@v4
+        with:
+          ref: main  # 物理锁定现有的 main 分支作为启动跳板
+
+      - name: 物理环境初始化
+        run: |
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          git config --global --add safe.directory $GITHUB_WORKSPACE
+
+      - name: 物理拉取并注入魔改配置
+        run: |
+          # 1. 物理拉取官方 MTK 源码全集
+          git clone -b mtksoc https://github.com/mtk-openwrt/u-boot.git u-boot-repo
+          cd u-boot-repo
+          
+          # 2. 物理注入 SL-3000 1024M 配置文件（与Makefile保持一致）
+          if [ -f "configs/mt7981_emmc_rfb_defconfig" ]; then
+              # 生成与Makefile匹配的配置文件名：mt7981_emmc_defconfig
+              cp configs/mt7981_emmc_rfb_defconfig configs/mt7981_emmc_defconfig
+              # 修复DRAM配置（适配1024M内存）
+              sed -i 's/CONFIG_NR_DRAM_BANKS=.*/CONFIG_NR_DRAM_BANKS=1/g' configs/mt7981_emmc_defconfig
+          fi
+
+          # 3. 执行物理脱水手术（保留核心文件）
+          echo "开始物理粉碎手术..."
+          # 保留根目录核心文件（Makefile是编译必需）
+          find . -maxdepth 1 -type f ! -name "Makefile" ! -name ".gitignore" ! -name "README" -delete
+          # 保留mt7981相关配置
+          find configs/ -type f ! -name "*mt7981*" ! -name "sandbox*" -delete
+          # 保留mt7981相关设备树
+          find arch/arm/dts/ -type f ! -name "*mt7981*" ! -name "Makefile" ! -name "Kconfig" ! -name "*.dtsi" -delete
+          # 保留mt7981相关头文件
+          find include/configs/ -type f ! -name "mt7981.h" ! -name "mediatek.h" ! -name "mtk-common.h" -delete
+
+      - name: 物理创建并推送分支
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd u-boot-repo
+          
+          # 重定向远程仓库
+          git remote remove origin
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git"
+          
+          # 创建并推送目标分支
+          git checkout -b sl3000-uboot-base
+          git add .
+          git commit -m "Initialize: SL-3000 1024M U-Boot (修复Makefile+配置文件名)"
+          git push -f origin sl3000-uboot-base
