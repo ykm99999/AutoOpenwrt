@@ -1,4 +1,4 @@
-name: OpenWrt Builder SL3000 Final Fix
+name: OpenWrt Builder SL3000 Matrix-Fix
 
 on:
   repository_dispatch:
@@ -30,38 +30,19 @@ jobs:
         sudo -E apt-get -qq install $(curl -fsSL https://is.gd/depends_ubuntu_2204)
         sudo timedatectl set-timezone "$TZ"
 
-    - name: Install libyaml-dev (optional, safe to keep)
-      run: sudo apt-get install -y libyaml-dev
-
-    - name: Clone main OpenWrt source
+    - name: Clone source code
       run: |
         git clone $REPO_URL -b $REPO_BRANCH openwrt
-
-    # ===== 关键步骤：将 U-Boot 源码克隆到 Makefile 期望的 src 目录 =====
-    - name: Clone U-Boot source to src/
-      run: |
-        git clone --depth 1 -b sl3000-uboot-base https://github.com/ykm888/66.git openwrt/package/boot/uboot-mediatek/src
-    # ====================================================================
-
-    - name: Execute diy-part1.sh (before feeds)
-      run: |
-        if [ -f "$DIY_P1_SH" ]; then
-          chmod +x $DIY_P1_SH
-          cd openwrt
-          $GITHUB_WORKSPACE/$DIY_P1_SH
-        else
-          echo "diy-part1.sh not found, skipping"
-        fi
+        ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
     - name: Update/Install feeds
       run: cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
 
-    - name: Load custom configuration and execute diy-part2.sh
+    - name: Load custom configuration
       run: |
-        cd openwrt
-        [ -e $GITHUB_WORKSPACE/$CONFIG_FILE ] && cp -f $GITHUB_WORKSPACE/$CONFIG_FILE .config
-        chmod +x $GITHUB_WORKSPACE/$DIY_P2_SH
-        $GITHUB_WORKSPACE/$DIY_P2_SH
+        [ -e $CONFIG_FILE ] && cp -f $CONFIG_FILE openwrt/.config
+        chmod +x $DIY_P2_SH
+        cd openwrt && $GITHUB_WORKSPACE/$DIY_P2_SH
 
     - name: Compile the firmware
       run: |
@@ -70,16 +51,18 @@ jobs:
         make tools/install -j$(nproc)
         make toolchain/install -j$(nproc)
         
-        echo "2. 编译 U-Boot (使用本地 src 源码)..."
+        echo "2. 物理编译 U-Boot (延续成功案例分步流程)..."
+        # 物理修正路径：解决 No rule to make target 错误
         make package/uboot-mediatek/compile V=s -j1
         
-        echo "3. 执行镜像合成..."
+        echo "3. 生成固件镜像..."
         make -j$(nproc) || make -j1 V=s
 
     - name: Organize files
       id: organize
       run: |
         mkdir -p $GITHUB_WORKSPACE/FIRMWARE_OUT
+        # 照抄母版逻辑抓取产物
         find openwrt/bin/targets/ -name "*sl_3000-emmc*" -exec cp -f {} $GITHUB_WORKSPACE/FIRMWARE_OUT/ \;
         echo "FIRMWARE=$GITHUB_WORKSPACE/FIRMWARE_OUT" >> $GITHUB_ENV
 
