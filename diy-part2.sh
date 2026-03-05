@@ -1,16 +1,16 @@
 #!/bin/bash
 
-# 1. 物理环境清理：抹除官方 U-Boot 源码及补丁
+# 1. 物理环境清理
 rm -rf package/boot/uboot-mediatek/src
 rm -rf package/boot/uboot-mediatek/patches/*
 mkdir -p package/boot/uboot-mediatek/src
 
-# 2. 拉取 sl3000-uboot-base 源码并注入物理目录
+# 2. 注入 1024M 补丁源码
 git clone --depth 1 -b sl3000-uboot-base https://github.com/ykm99999/AutoOpenwrt.git uboot_temp
 cp -rf uboot_temp/* package/boot/uboot-mediatek/src/
 rm -rf uboot_temp
 
-# 3. 彻底重写 Makefile：解决路径不一致 (stat/touch) 错误
+# 3. 彻底重写 Makefile：物理锁定路径，禁用所有导致路径偏离的宏
 cat <<'EOF' > package/boot/uboot-mediatek/Makefile
 include $(TOPDIR)/rules.mk
 include $(INCLUDE_DIR)/kernel.mk
@@ -19,19 +19,28 @@ PKG_NAME:=uboot-mediatek
 PKG_VERSION:=custom
 PKG_RELEASE:=1
 
+# 禁用下载逻辑，防止 404
 PKG_SOURCE:=
 PKG_SOURCE_URL:=
 PKG_HASH:=skip
+
+# 【核心修复】：强制锁定构建目录，不准系统添加任何子架构后缀
+PKG_BUILD_DIR:=$(BUILD_DIR)/$(PKG_NAME)-$(PKG_VERSION)
 
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/u-boot.mk
 include $(INCLUDE_DIR)/host-build.mk
 
-# 物理修复：强制在 Prepare 阶段对齐系统生成的 PKG_BUILD_DIR
+# 物理 Prepare：确保源码落位在 PKG_BUILD_DIR
 define Build/Prepare
 	rm -rf $(PKG_BUILD_DIR)
 	mkdir -p $(PKG_BUILD_DIR)
 	$(CP) ./src/* $(PKG_BUILD_DIR)/
+endef
+
+# 物理屏蔽 Configure：跳过 ./configure 检查，防止路径二次偏离
+define Build/Configure
+	@true
 endef
 
 define Package/U-Boot
@@ -68,7 +77,7 @@ endef
 $(eval $(call BuildPackage,U-Boot))
 EOF
 
-# 4. 物理注入 Device 定义 (延续上一版原文)
+# 4. Device 定义（维持 1024M 物理规格）
 DEVICE_FILE="target/linux/mediatek/image/mt7981.mk"
 sed -i '/define Device\/sl_3000-emmc/,/endef/d' "$DEVICE_FILE"
 cat <<'EOF' >> "$DEVICE_FILE"
@@ -100,7 +109,7 @@ endef
 TARGET_DEVICES += sl_3000-emmc
 EOF
 
-# 5. 彻底锁定架构：清除所有旧配置，强制重载
+# 5. 【彻底解决架构污染】物理强制重写 .config
 true > .config
 cat <<EOF >> .config
 CONFIG_TARGET_mediatek=y
@@ -109,6 +118,6 @@ CONFIG_TARGET_mediatek_mt7981_DEVICE_sl_3000-emmc=y
 CONFIG_PACKAGE_uboot-mediatek=y
 EOF
 
-# 6. 下载物理伪装
+# 6. 物理屏蔽下载检查
 mkdir -p dl
 touch dl/uboot-mediatek-custom.tar.bz2
