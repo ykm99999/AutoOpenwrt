@@ -1,14 +1,14 @@
-# SPDX-License-Identifier: GPL-2.0-only
-
 include $(TOPDIR)/rules.mk
 include $(INCLUDE_DIR)/kernel.mk
 
 PKG_NAME:=uboot-mediatek
 PKG_VERSION:=custom
 PKG_RELEASE:=1
+
 PKG_SOURCE:=
 PKG_SOURCE_URL:=
 PKG_HASH:=skip
+PKG_MAINTAINER:=Gemini_AI
 
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/u-boot.mk
@@ -17,7 +17,6 @@ include $(INCLUDE_DIR)/host-build.mk
 UBOOT_USE_INTREE_DTC:=1
 UBOOT_MAKE_FLAGS += NO_YAML=1
 
-# 核心修复：直接从 Makefile 同级的 src/ 目录物理拷贝源码
 define Build/Prepare
 	mkdir -p $(PKG_BUILD_DIR)
 	cp -fpR $(CURDIR)/src/. $(PKG_BUILD_DIR)/
@@ -47,7 +46,6 @@ endef
 UBOOT_TARGETS := mt7981_sl_3000-emmc
 
 define Build/fip-image
-	# 物理寻找 ATF 生成的 BL2 和 BL31
 	BL2_BIN="$(STAGING_DIR_IMAGE)/mt7981-emmc-ddr3-bl2.bin" ; \
 	BL31_BIN="$(STAGING_DIR_IMAGE)/mt7981-emmc-ddr3-bl31.bin" ; \
 	$(STAGING_DIR_HOST)/bin/fiptool create \
@@ -64,7 +62,7 @@ endef
 
 define Build/InstallDev
 	$(INSTALL_DIR) $(STAGING_DIR_IMAGE)
-	# 物理补全救砖全家桶命名，对齐母版 Device 定义
+	# 物理锁定救砖件命名：必须对齐 Device/sl_3000-emmc 宏
 	$(CP) $(STAGING_DIR_IMAGE)/mt7981-emmc-ddr3-bl2.bin $(STAGING_DIR_IMAGE)/emmc-preloader.bin
 	$(CP) $(PKG_BUILD_DIR)/$(BUILD_VARIANT)/u-boot.fip $(STAGING_DIR_IMAGE)/emmc-bl31-uboot.fip
 	$(CP) $(PKG_BUILD_DIR)/$(BUILD_VARIANT)/u-boot.fip $(STAGING_DIR_IMAGE)/u-boot.fip
