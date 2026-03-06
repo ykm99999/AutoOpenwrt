@@ -1,54 +1,13 @@
 #!/bin/bash
 
-# 1. 物理注入 1024M 补丁源码 (U-Boot)
+# 1. 物理注入 1024M U-Boot 补丁 (必须保留)
 rm -rf package/boot/uboot-mediatek/src
 mkdir -p package/boot/uboot-mediatek/src
 git clone --depth 1 -b sl3000-uboot-base https://github.com/ykm99999/AutoOpenwrt.git uboot_temp
 cp -rf uboot_temp/* package/boot/uboot-mediatek/src/
 rm -rf uboot_temp
 
-# 2. 物理注入 DTS 文件 (精准对齐 2410 分支路径)
-DTS_DIR="target/linux/mediatek/files-5.4/arch/arm64/boot/dts/mediatek"
-mkdir -p "$DTS_DIR"
-cat <<'EOF' > "$DTS_DIR/mt7981-sl-3000-emmc.dts"
-/dts-v1/;
-#include "mt7981.dtsi"
-
-/ {
-	model = "SL-3000 eMMC";
-	compatible = "sl,3000-emmc", "mediatek,mt7981";
-
-	chosen {
-		bootargs = "console=ttyS0,115200n8 earlycon";
-		stdout-path = "serial0:115200n8";
-	};
-
-	memory@40000000 {
-		device_type = "memory";
-		reg = <0 0x40000000 0 0x40000000>; /* 1024M 物理内存映射 */
-	};
-};
-
-&uart0 {
-	status = "okay";
-};
-
-&watchdog {
-	status = "okay";
-};
-
-&eth0 {
-	status = "okay";
-	mediatek,gmac-id = <0>;
-	phy-mode = "2500base-x";
-	fixed-link {
-		speed = <2500>;
-		full-duplex;
-	};
-};
-EOF
-
-# 3. 物理重写 Makefile (保持路径锁定修复)
+# 2. 物理重写 Makefile (必须保留：锁定路径防止 touch 报错)
 cat <<'EOF' > package/boot/uboot-mediatek/Makefile
 include $(TOPDIR)/rules.mk
 include $(INCLUDE_DIR)/kernel.mk
@@ -111,7 +70,7 @@ endef
 $(eval $(call BuildPackage,U-Boot))
 EOF
 
-# 4. 物理注入 Device 定义 (对齐 DTS 名称与 1024M 规格)
+# 3. 物理注入 Device 定义 (必须保留：让编译器去找你仓库里的那个 DTS)
 DEVICE_FILE="target/linux/mediatek/image/mt7981.mk"
 sed -i '/define Device\/sl_3000-emmc/,/endef/d' "$DEVICE_FILE"
 cat <<'EOF' >> "$DEVICE_FILE"
@@ -143,6 +102,6 @@ endef
 TARGET_DEVICES += sl_3000-emmc
 EOF
 
-# 5. 下载欺骗
+# 4. 下载欺骗
 mkdir -p dl
 touch dl/uboot-mediatek-custom.tar.bz2
