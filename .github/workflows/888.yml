@@ -5,6 +5,7 @@ on:
   workflow_dispatch:
 
 env:
+  # 【物理校准】仓库与分支对齐 2410
   REPO_URL: https://github.com/ykm99999/AutoOpenwrt.git
   REPO_BRANCH: 2410
   FEEDS_CONF: feeds.conf.default
@@ -80,7 +81,7 @@ jobs:
       run: |
         cd openwrt
         echo -e "$(nproc) thread compile"
-        # 【物理恢复】完全回归成功案例的原生步骤，不提前单独编译 U-Boot
+        # 原文照抄，依靠脚本修复
         make -j$(nproc) || make -j1 || make -j1 V=s
         echo "status=success" >> $GITHUB_OUTPUT
         grep '^CONFIG_TARGET.*DEVICE.*=y' .config | sed -r 's/.*DEVICE_(.*)=y/\1/' > DEVICE_NAME
