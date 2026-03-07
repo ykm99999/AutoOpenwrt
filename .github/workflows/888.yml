@@ -1,19 +1,18 @@
-name: OpenWrt Builder SL3000 (Custom Repo)
+name: OpenWrt Builder SL3000 Final
 
 on:
   repository_dispatch:
   workflow_dispatch:
 
 env:
-  # 使用您的 2410 分支仓库作为主源码
   REPO_URL: https://github.com/ykm99999/AutoOpenwrt
   REPO_BRANCH: 2410
-  # U-Boot 源码仓库和分支
   UBOOT_REPO_URL: https://github.com/ykm99999/AutoOpenwrt
   UBOOT_BRANCH: sl3000-uboot-base
-
   FEEDS_CONF: feeds.conf.default
-  CONFIG_FILE: custom-config/sl3000.config
+  # 配置文件路径（支持根目录或 custom-config/ 下）
+  CONFIG_FILE: sl3000.config
+  CONFIG_FILE_ALT: custom-config/sl3000.config
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
   UPLOAD_FIRMWARE: true
@@ -38,11 +37,11 @@ jobs:
     - name: Install libyaml-dev
       run: sudo apt-get install -y libyaml-dev
 
-    - name: Clone main OpenWrt source (2410 branch)
+    - name: Clone main OpenWrt source
       run: |
         git clone --depth 1 $REPO_URL -b $REPO_BRANCH openwrt
 
-    - name: Clone U-Boot source (sl3000-uboot-base branch) to src/
+    - name: Clone U-Boot source to src/
       run: |
         git clone --depth 1 $UBOOT_REPO_URL -b $UBOOT_BRANCH openwrt/package/boot/uboot-mediatek/src
 
@@ -59,10 +58,23 @@ jobs:
     - name: Update/Install feeds
       run: cd openwrt && ./scripts/feeds update -a && ./scripts/feeds install -a
 
-    - name: Load custom configuration and execute diy-part2.sh
+    - name: Load custom configuration
       run: |
         cd openwrt
-        [ -e $GITHUB_WORKSPACE/$CONFIG_FILE ] && cp -f $GITHUB_WORKSPACE/$CONFIG_FILE .config
+        # 尝试从两个可能的位置复制配置文件
+        if [ -f "$GITHUB_WORKSPACE/$CONFIG_FILE" ]; then
+          cp -f $GITHUB_WORKSPACE/$CONFIG_FILE .config
+          echo "✅ 使用配置文件: $CONFIG_FILE"
+        elif [ -f "$GITHUB_WORKSPACE/$CONFIG_FILE_ALT" ]; then
+          cp -f $GITHUB_WORKSPACE/$CONFIG_FILE_ALT .config
+          echo "✅ 使用配置文件: $CONFIG_FILE_ALT"
+        else
+          echo "⚠️ 未找到配置文件，将使用默认配置"
+        fi
+
+    - name: Execute diy-part2.sh
+      run: |
+        cd openwrt
         chmod +x $GITHUB_WORKSPACE/$DIY_P2_SH
         $GITHUB_WORKSPACE/$DIY_P2_SH
 
