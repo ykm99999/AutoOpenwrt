@@ -1,0 +1,62 @@
+name: 一键修复推送到仓库源 (Auto-Fix)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  physical-repair:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: 1. 物理检出仓库
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 2. 物理修复编译逻辑与 Config
+        run: |
+          set -e
+          
+          echo "正在物理修复 MT7981 镜像构建宏 (彻底解决 Missing Build)..."
+          # 物理定位 target 下的 mk 文件并执行像素级替换
+          MK_FILE="target/linux/mediatek/image/mt7981.mk"
+          if [ -f "$MK_FILE" ]; then
+            sed -i 's/mt798x-gpt/mtk-gpt/g' "$MK_FILE"
+            echo "✅ $MK_FILE 物理宏替换完成"
+          fi
+
+          echo "正在物理清洗 sl3000.config (消除幽灵依赖)..."
+          CONFIG_FILE="sl3000.config"
+          if [ -f "$CONFIG_FILE" ]; then
+            # 抹除 24.10 不存在的内核模块与应用依赖
+            sed -i '/lua-cjson/d' "$CONFIG_FILE"
+            sed -i '/glib2/d' "$CONFIG_FILE"
+            sed -i '/libgpiod/d' "$CONFIG_FILE"
+            sed -i '/libpam/d' "$CONFIG_FILE"
+            sed -i '/pciids/d' "$CONFIG_FILE"
+            sed -i '/pciutils/d' "$CONFIG_FILE"
+            sed -i '/luci-lua-runtime/d' "$CONFIG_FILE"
+            sed -i '/luasrcdiet/d' "$CONFIG_FILE"
+            sed -i '/kmod-mtk-warp/d' "$CONFIG_FILE"
+            sed -i '/mtwifi-cfg/d' "$CONFIG_FILE"
+            
+            # 物理锁定 EMMC 相关核心包
+            echo "CONFIG_PACKAGE_kmod-mmc=y" >> "$CONFIG_FILE"
+            echo "CONFIG_PACKAGE_mt7981-wo-firmware=y" >> "$CONFIG_FILE"
+            echo "✅ $CONFIG_FILE 物理清洗完成"
+          fi
+
+      - name: 3. 物理执行仓库同步
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          
+          if git diff --staged --quiet; then
+            echo "物理状态一致，未发现错误逻辑，无需推送。"
+          else
+            git commit -m "fix: 物理修复 GPT 构建宏并清洗幽灵依赖"
+            git push origin main
+          fi
