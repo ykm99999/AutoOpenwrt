@@ -1,4 +1,4 @@
-name: Auto Fix Build Issues (No EOF)
+name: Auto Fix Build Issues (Stable)
 
 on:
   workflow_dispatch:
@@ -7,7 +7,6 @@ on:
       - 'target/linux/mediatek/image/mt7981.mk'
       - 'package/boot/uboot-mediatek/Makefile'
       - 'custom-config/sl3000.config'
-      - 'diy-part2.sh'
 
 jobs:
   fix-and-commit:
@@ -38,13 +37,13 @@ jobs:
             echo "⚠️ mt7981.mk not found, skipping"
           fi
 
-      - name: Fix uboot-mediatek Makefile – overwrite with correct version (no EOF)
+      - name: Fix uboot-mediatek Makefile – overwrite with correct version
         run: |
           set -e
           UBOOT_MK="package/boot/uboot-mediatek/Makefile"
           if [ -f "$UBOOT_MK" ]; then
-            # Completely overwrite the Makefile using echo lines, no EOF
-            > "$UBOOT_MK"   # truncate file
+            # Completely overwrite the Makefile using echo lines (no EOF)
+            > "$UBOOT_MK"
             echo '# SPDX-License-Identifier: GPL-2.0-only' >> "$UBOOT_MK"
             echo '# Auto-fixed version: uses local src, NO_YAML, clean download variables' >> "$UBOOT_MK"
             echo '' >> "$UBOOT_MK"
@@ -163,7 +162,7 @@ jobs:
             echo 'endef' >> "$UBOOT_MK"
             echo '' >> "$UBOOT_MK"
             echo '$(eval $(call BuildPackage,U-Boot))' >> "$UBOOT_MK"
-            echo "✅ Overwrote uboot-mediatek Makefile with corrected version (no EOF)"
+            echo "✅ Overwrote uboot-mediatek Makefile with corrected version"
           else
             echo "⚠️ uboot-mediatek Makefile not found, skipping"
           fi
@@ -184,11 +183,10 @@ jobs:
             echo "⚠️ sl3000.config not found, skipping"
           fi
 
-      - name: Fix diy-part2.sh – ensure ATF enabling commands
+      - name: Commit and push fixes
         run: |
-          set -e
-          DIY2="diy-part2.sh"
-          if [ -f "$DIY2" ]; then
-            if ! grep -q "CONFIG_PACKAGE_trusted-firmware-a-mt7981-emmc-ddr3=y" "$DIY2"; then
-              awk '
-                /make def
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add target/linux/mediatek/image/mt7981.mk \
+                   package/boot/uboot-mediatek/Makefile \
+                   custom-config/sl3000.config 2>/dev/nu
