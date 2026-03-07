@@ -1,13 +1,13 @@
 #!/bin/bash
 
-# 1. 物理注入 1024M U-Boot 源码 (仓库原文照抄)
+# 1. 物理注入 1024M U-Boot 源码 (原文照抄)
 rm -rf package/boot/uboot-mediatek/src
 mkdir -p package/boot/uboot-mediatek/src
 git clone --depth 1 -b sl3000-uboot-base https://github.com/ykm99999/AutoOpenwrt.git uboot_temp
 cp -rf uboot_temp/* package/boot/uboot-mediatek/src/
 rm -rf uboot_temp
 
-# 2. 物理修复 Makefile (锁定路径，防止 touch 报错)
+# 2. 物理重写 Makefile (原文照抄)
 cat <<'EOF' > package/boot/uboot-mediatek/Makefile
 include $(TOPDIR)/rules.mk
 include $(INCLUDE_DIR)/kernel.mk
@@ -70,9 +70,11 @@ endef
 $(eval $(call BuildPackage,U-Boot))
 EOF
 
-# 3. 物理注入 Device 定义 (锁定 1024M 规格)
+# 3. 物理修复镜像构建定义 (彻底解决 Missing Build/mt798x-gpt)
+# 审计：24.10 分支使用 mtk-gpt 替代 mt798x-gpt
 DEVICE_FILE="target/linux/mediatek/image/mt7981.mk"
 sed -i '/define Device\/sl_3000-emmc/,/endef/d' "$DEVICE_FILE"
+
 cat <<'EOF' >> "$DEVICE_FILE"
 
 define Device/sl_3000-emmc
@@ -91,10 +93,10 @@ define Device/sl_3000-emmc
   IMAGES := sysupgrade.bin factory.img.gz
   IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
   ARTIFACTS := emmc-gpt.bin emmc-preloader.bin emmc-bl31-uboot.fip
-  ARTIFACT/emmc-gpt.bin := mt798x-gpt emmc
+  ARTIFACT/emmc-gpt.bin := mtk-gpt emmc
   ARTIFACT/emmc-preloader.bin := mt7981-bl2 emmc-ddr3
   ARTIFACT/emmc-bl31-uboot.fip := mt7981-bl31-uboot emmc-ddr3
-  IMAGE/factory.img.gz := mt798x-gpt emmc |\
+  IMAGE/factory.img.gz := mtk-gpt emmc |\
 	pad-to 17k | mt7981-bl2 emmc-ddr3 |\
 	pad-to 6656k | mt7981-bl31-uboot emmc-ddr3 |\
 	pad-to 64M | append-image squashfs-sysupgrade.itb | gzip
