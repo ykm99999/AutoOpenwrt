@@ -1,58 +1,194 @@
-name: 一键修复推送到仓库源 (Repo-Fixer V12 - 绝对物理覆盖)
+name: Auto Fix Build Issues (No EOF)
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - 'target/linux/mediatek/image/mt7981.mk'
+      - 'package/boot/uboot-mediatek/Makefile'
+      - 'custom-config/sl3000.config'
+      - 'diy-part2.sh'
 
 jobs:
-  repair:
+  fix-and-commit:
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
-      - name: 1. 物理检出仓库
+      - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 2. 物理洗白并同步两个分支
+      - name: Fix mt7981.mk – comment out ARTIFACTS that require mtk-gpt
         run: |
           set -e
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          # --- 步骤 A：物理处理 main 分支 ---
-          git checkout main
-          CONF="sl3000.config"
-          if [ -f "$CONF" ]; then
-            echo "正在对 main 分支执行物理手术..."
-            # 使用临时文件确保写入成功
-            TMP_CONF=$(mktemp)
-            # 原文照抄，同时物理剔除幽灵依赖
-            grep -vE "lua-cjson|glib2|libgpiod|libpam|pciids|pciutils|luci-lua-runtime|luasrcdiet|kmod-mtk-warp|mtwifi-cfg|ext-throttle|kmod-xdp-sockets-diag" "$CONF" > "$TMP_CONF"
-            
-            # 强制补全核心 EMMC 驱动
-            echo "CONFIG_PACKAGE_kmod-mmc=y" >> "$TMP_CONF"
-            echo "CONFIG_PACKAGE_mt7981-wo-firmware=y" >> "$TMP_CONF"
-            
-            mv "$TMP_CONF" "$CONF"
-            git add "$CONF"
-            git commit -m "fix(config): 物理抹除幽灵依赖 (V12)" || echo "No changes"
-            git push origin main
+          MK_FILE="target/linux/mediatek/image/mt7981.mk"
+          if [ -f "$MK_FILE" ]; then
+            # Comment out ARTIFACTS lines inside sl_3000-emmc definition
+            sed -i '/define Device\/sl_3000-emmc/,/endef/ {
+              s/^\([[:space:]]*ARTIFACTS\)/#\1/
+              s/^\([[:space:]]*ARTIFACT\/emmc-gpt.bin\)/#\1/
+              s/^\([[:space:]]*ARTIFACT\/emmc-preloader.bin\)/#\1/
+              s/^\([[:space:]]*ARTIFACT\/emmc-bl31-uboot.fip\)/#\1/
+            }' "$MK_FILE"
+            echo "✅ Fixed mt7981.mk"
+          else
+            echo "⚠️ mt7981.mk not found, skipping"
           fi
 
-          # --- 步骤 B：物理处理 2410 分支 ---
-          git checkout 2410
-          
-          # 1. 物理重写 Makefile (彻底解决 mtk-gpt 报错)
-          MK_FILE="target/linux/mediatek/image/mt7981.mk"
-          mkdir -p $(dirname "$MK_FILE")
-          printf "# Target Makefile\nKERNEL_LOADADDR := 0x48080000\n\ndefine Device/sl_3000-emmc\n  DEVICE_VENDOR := SL\n  DEVICE_MODEL := 3000 eMMC\n  DEVICE_DTS := mt7981-sl-3000-emmc\n  DEVICE_DTS_DIR := \$(DTS_DIR)/mediatek\n  DEVICE_DRAM_SIZE := 1024M\n  ARTIFACTS := emmc-gpt.bin emmc-preloader.bin emmc-bl31-uboot.fip\n  ARTIFACT/emmc-gpt.bin := mtk-gpt emmc\n  ARTIFACT/emmc-preloader.bin := mt7981-bl2 emmc-ddr3\n  ARTIFACT/emmc-bl31-uboot.fip := mt7981-bl31-uboot emmc-ddr3\n  IMAGES := sysupgrade.bin\n  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata\nendef\nTARGET_DEVICES += sl_3000-emmc\n" > "$MK_FILE"
+      - name: Fix uboot-mediatek Makefile – overwrite with correct version (no EOF)
+        run: |
+          set -e
+          UBOOT_MK="package/boot/uboot-mediatek/Makefile"
+          if [ -f "$UBOOT_MK" ]; then
+            # Completely overwrite the Makefile using echo lines, no EOF
+            > "$UBOOT_MK"   # truncate file
+            echo '# SPDX-License-Identifier: GPL-2.0-only' >> "$UBOOT_MK"
+            echo '# Auto-fixed version: uses local src, NO_YAML, clean download variables' >> "$UBOOT_MK"
+            echo '' >> "$UBOOT_MK"
+            echo 'include $(TOPDIR)/rules.mk' >> "$UBOOT_MK"
+            echo 'include $(INCLUDE_DIR)/kernel.mk' >> "$UBOOT_MK"
+            echo '' >> "$UBOOT_MK"
+            echo 'PKG_NAME:=uboot-mediatek' >> "$UBOOT_MK"
+            echo 'PKG_VERSION:=custom' >> "$UBOOT_MK"
+            echo 'PKG_RELEASE:=1' >> "$UBOOT_MK"
+            echo 'PKG_SOURCE:=' >> "$UBOOT_MK"
+            echo 'PKG_SOURCE_URL:=' >> "$UBOOT_MK"
+            echo 'PKG_HASH:=skip' >> "$UBOOT_MK"
+            echo 'PKG_MD5SUM:=' >> "$UBOOT_MK"
+            echo 'PKG_MAINTAINER:=Gemini_AI' >> "$UBOOT_MK"
+            echo '' >> "$UBOOT_MK"
+            echo 'PKG_PATCH_DIR:=' >> "$UBOOT_MK"
+            echo '' >> "$UBOOT_MK"
+            echo 'PKG_BUILD_DEPENDS:=!(TARGET_ramips||TARGET_mediatek_mt7623):arm-trusted-firmware-tools/host' >> "$UBOOT_MK"
+            echo '' >> "$UBOOT_MK"
+            echo 'UBOOT_USE_INTREE_DTC:=1' >> "$UBOOT_MK"
+            echo '' >> "$UBOOT_MK"
+            echo 'include $(INCLUDE_DIR)/package.mk' >> "$UBOOT_MK"
+            echo 'include $(INCLUDE_DIR)/u-boot.mk' >> "$UBOOT_MK"
+            echo 'include $(INCLUDE_DIR)/host-build.mk' >> "$UBOOT_MK"
+            echo '' >> "$UBOOT_MK"
+            echo '# Force disable YAML output to avoid libyaml link issues' >> "$UBOOT_MK"
+            echo 'UBOOT_MAKE_FLAGS += NO_YAML=1' >> "$UBOOT_MK"
+            echo '' >> "$UBOOT_MK"
+            echo '# Custom Prepare: copy source from local src directory' >> "$UBOOT_MK"
+            echo 'define Build/Prepare' >> "$UBOOT_MK"
+            echo '	mkdir -p $(PKG_BUILD_DIR)' >> "$UBOOT_MK"
+            echo '	cp -fpR $(CURDIR)/src/. $(PKG_BUILD_DIR)/' >> "$UBOOT_MK"
+            echo 'endef' >> "$UBOOT_MK"
+            echo '' >> "$UBOOT_MK"
+            echo 'define Package/U-Boot' >> "$UBOOT_MK"
+            echo '  SECTION:=boot' >> "$UBOOT_MK"
+            echo '  CATEGORY:=Boot Loaders' >> "$UBOOT_MK"
+            echo '  TITLE:=U-Boot for MediaTek MT7981 (SL 3000 eMMC)' >> "$UBOOT_MK"
+            echo '  DEPENDS:=@TARGET_mediatek_mt7981' >> "$UBOOT_MK"
+            echo '  URL:=https://github.com/ykm888/66.git' >> "$UBOOT_MK"
+            echo 'endef' >> "$UBOOT_MK"
+            echo '' >> "$UBOOT_MK"
+            echo 'define U-Boot/Default' >> "$UBOOT_MK"
+            echo '  BUILD_TARGET:=mediatek' >> "$UBOOT_MK"
+            echo '  UBOOT_IMAGE:=u-boot-mtk.bin' >> "$UBOOT_MK"
+            echo '  HIDDEN:=1' >> "$UBOOT_MK"
+            echo 'endef' >> "$UBOOT_MK"
+            echo '' >> "$UBOOT_MK"
+            echo 'define U-Boot/mt7981_sl_3000-emmc' >> "$UBOOT_MK"
+            echo '  NAME:=SL 3000 (eMMC)' >> "$UBOOT_MK"
+            echo '  BUILD_SUBTARGET:=filogic' >> "$UBOOT_MK"
+            echo '  BUILD_DEVICES:=sl_3000-emmc' >> "$UBOOT_MK"
+            echo '  UBOOT_CONFIG:=mt7981_emmc' >> "$UBOOT_MK"
+            echo '  UBOOT_IMAGE:=u-boot.fip' >> "$UBOOT_MK"
+            echo '  BL2_BOOTDEV:=emmc' >> "$UBOOT_MK"
+            echo '  BL2_SOC:=mt7981' >> "$UBOOT_MK"
+            echo '  BL2_DDRTYPE:=ddr3' >> "$UBOOT_MK"
+            echo '  DEPENDS:=+trusted-firmware-a-mt7981-emmc-ddr3' >> "$UBOOT_MK"
+            echo 'endef' >> "$UBOOT_MK"
+            echo '' >> "$UBOOT_MK"
+            echo 'UBOOT_TARGETS := mt7981_sl_3000-emmc' >> "$UBOOT_MK"
+            echo '' >> "$UBOOT_MK"
+            echo 'UBOOT_CUSTOMIZE_CONFIG := \' >> "$UBOOT_MK"
+            echo '	--disable TOOLS_KWBIMAGE \' >> "$UBOOT_MK"
+            echo '	--disable TOOLS_LIBCRYPTO \' >> "$UBOOT_MK"
+            echo '	--disable TOOLS_MKEFICAPSULE \' >> "$UBOOT_MK"
+            echo '	--enable SERIAL_RX_BUFFER \' >> "$UBOOT_MK"
+            echo '	--set-val SERIAL_RX_BUFFER_SIZE 256' >> "$UBOOT_MK"
+            echo '' >> "$UBOOT_MK"
+            echo 'ifdef CONFIG_TARGET_mediatek' >> "$UBOOT_MK"
+            echo 'UBOOT_MAKE_FLAGS += $(UBOOT_IMAGE:.fip=.bin)' >> "$UBOOT_MK"
+            echo 'endif' >> "$UBOOT_MK"
+            echo '' >> "$UBOOT_MK"
+            echo 'define Build/fip-image' >> "$UBOOT_MK"
+            echo '	BL2_BIN="$(STAGING_DIR_IMAGE)/mt7981-emmc-ddr3-bl2.bin" ; \' >> "$UBOOT_MK"
+            echo '	BL31_BIN="$(STAGING_DIR_IMAGE)/mt7981-emmc-ddr3-bl31.bin" ; \' >> "$UBOOT_MK"
+            echo '	if [ ! -f "$$BL2_BIN" ]; then \' >> "$UBOOT_MK"
+            echo '		echo "ERROR: BL2 not found at $$BL2_BIN"; exit 1; \' >> "$UBOOT_MK"
+            echo '	fi ; \' >> "$UBOOT_MK"
+            echo '	if [ ! -f "$$BL31_BIN" ]; then \' >> "$UBOOT_MK"
+            echo '		echo "ERROR: BL31 not found at $$BL31_BIN"; exit 1; \' >> "$UBOOT_MK"
+            echo '	fi ; \' >> "$UBOOT_MK"
+            echo '	$(STAGING_DIR_HOST)/bin/fiptool create \' >> "$UBOOT_MK"
+            echo '		--tb-fw $$BL2_BIN \' >> "$UBOOT_MK"
+            echo '		--soc-fw $$BL31_BIN \' >> "$UBOOT_MK"
+            echo '		--nt-fw $(PKG_BUILD_DIR)/$(BUILD_VARIANT)/u-boot.bin \' >> "$UBOOT_MK"
+            echo '		$(PKG_BUILD_DIR)/$(BUILD_VARIANT)/u-boot.fip' >> "$UBOOT_MK"
+            echo 'endef' >> "$UBOOT_MK"
+            echo '' >> "$UBOOT_MK"
+            echo 'define Build/Configure' >> "$UBOOT_MK"
+            echo '	$(call Build/Configure/U-Boot)' >> "$UBOOT_MK"
+            echo '	sed -i '"'"'\/^CONFIG_TOOLS_LIBCRYPTO=y\/s\/.*\/# CONFIG_TOOLS_LIBCRYPTO is not set\/'"'"' $(PKG_BUILD_DIR)/.config' >> "$UBOOT_MK"
+            echo 'endef' >> "$UBOOT_MK"
+            echo '' >> "$UBOOT_MK"
+            echo 'define Build/Compile' >> "$UBOOT_MK"
+            echo '	$(call Build/Compile/U-Boot)' >> "$UBOOT_MK"
+            echo 'ifeq ($(UBOOT_IMAGE),u-boot.fip)' >> "$UBOOT_MK"
+            echo '	$(call Build/fip-image)' >> "$UBOOT_MK"
+            echo 'endif' >> "$UBOOT_MK"
+            echo 'endef' >> "$UBOOT_MK"
+            echo '' >> "$UBOOT_MK"
+            echo 'ifdef CONFIG_TARGET_mediatek' >> "$UBOOT_MK"
+            echo 'define Package/u-boot/install' >> "$UBOOT_MK"
+            echo 'endef' >> "$UBOOT_MK"
+            echo 'endif' >> "$UBOOT_MK"
+            echo '' >> "$UBOOT_MK"
+            echo 'define Build/InstallDev' >> "$UBOOT_MK"
+            echo '	$(INSTALL_DIR) $(STAGING_DIR_HOST)/share/u-boot' >> "$UBOOT_MK"
+            echo '	$(CP) $(STAGING_DIR_IMAGE)/mt7981-emmc-ddr3-bl2.bin \' >> "$UBOOT_MK"
+            echo '		$(STAGING_DIR_HOST)/share/u-boot/mt7981-emmc-ddr3-bl2.bin' >> "$UBOOT_MK"
+            echo '	$(CP) $(PKG_BUILD_DIR)/$(BUILD_VARIANT)/u-boot.fip \' >> "$UBOOT_MK"
+            echo '		$(STAGING_DIR_HOST)/share/u-boot/mt7981-emmc-ddr3-fip.bin' >> "$UBOOT_MK"
+            echo '	$(INSTALL_DIR) $(STAGING_DIR_IMAGE)' >> "$UBOOT_MK"
+            echo '	$(CP) $(STAGING_DIR_HOST)/share/u-boot/mt7981-emmc-ddr3-bl2.bin $(STAGING_DIR_IMAGE)/' >> "$UBOOT_MK"
+            echo '	$(CP) $(STAGING_DIR_HOST)/share/u-boot/mt7981-emmc-ddr3-fip.bin $(STAGING_DIR_IMAGE)/' >> "$UBOOT_MK"
+            echo 'endef' >> "$UBOOT_MK"
+            echo '' >> "$UBOOT_MK"
+            echo '$(eval $(call BuildPackage,U-Boot))' >> "$UBOOT_MK"
+            echo "✅ Overwrote uboot-mediatek Makefile with corrected version (no EOF)"
+          else
+            echo "⚠️ uboot-mediatek Makefile not found, skipping"
+          fi
 
-          # 2. 物理同步 main 的 Config 到 2410 分支
-          git checkout main -- sl3000.config
-          
-          git add .
-          git commit -m "fix(repo): 跨分支物理宏修复与基因同步 (V12)" || echo "No changes"
-          git push origin 2410
+      - name: Fix sl3000.config – enable ATF and uboot packages
+        run: |
+          set -e
+          CONFIG_FILE="custom-config/sl3000.config"
+          if [ -f "$CONFIG_FILE" ]; then
+            grep -q "CONFIG_PACKAGE_trusted-firmware-a-mt7981-emmc-ddr3=y" "$CONFIG_FILE" || \
+              echo "CONFIG_PACKAGE_trusted-firmware-a-mt7981-emmc-ddr3=y" >> "$CONFIG_FILE"
+            grep -q "CONFIG_PACKAGE_uboot-mediatek=y" "$CONFIG_FILE" || \
+              echo "CONFIG_PACKAGE_uboot-mediatek=y" >> "$CONFIG_FILE"
+            grep -q "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y" "$CONFIG_FILE" || \
+              echo "CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y" >> "$CONFIG_FILE"
+            echo "✅ Fixed sl3000.config"
+          else
+            echo "⚠️ sl3000.config not found, skipping"
+          fi
+
+      - name: Fix diy-part2.sh – ensure ATF enabling commands
+        run: |
+          set -e
+          DIY2="diy-part2.sh"
+          if [ -f "$DIY2" ]; then
+            if ! grep -q "CONFIG_PACKAGE_trusted-firmware-a-mt7981-emmc-ddr3=y" "$DIY2"; then
+              awk '
+                /make def
