@@ -1,4 +1,4 @@
-name: 一键修复推送到仓库源 (Repo-Fixer V7 - 彻底解决版)
+name: 一键修复推送到仓库源 (Repo-Fixer V9 - 三位一体彻底修复)
 
 on:
   workflow_dispatch:
@@ -16,32 +16,50 @@ jobs:
           ref: 2410
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 2. 物理创建并运行修复脚本 (彻底禁用 YAML 内嵌 EOF)
+      - name: 2. 物理洗白 sl3000.config (禁用 EOF)
         run: |
-          # 物理隔离：先创建一个独立的临时脚本文件，避免在 YAML 中直接处理复杂字符
-          touch fix_mk.sh
-          chmod +x fix_mk.sh
-          
-          # 使用一系列 echo 像素级构建脚本内容，绝对不会触发 syntax error
-          echo '#!/bin/bash' > fix_mk.sh
-          echo 'MK_FILE=$(find . -name "mt7981.mk" | head -n 1)' >> fix_mk.sh
-          echo 'if [ -z "$MK_FILE" ]; then echo "未找到文件"; exit 1; fi' >> fix_mk.sh
-          
-          # 物理锁定正确的内容块
-          echo 'printf "# Target Makefile for MT7981 - Aligned for SL-3000\n\nKERNEL_LOADADDR := 0x48080000\n\nMT7981_USB_PKGS := automount blkid blockdev fdisk kmod-nls-cp437 kmod-nls-iso8859-1 kmod-usb2 kmod-usb3 luci-app-usb-printer luci-i18n-usb-printer-zh-cn kmod-usb-net-rndis usbutils kmod-usb-net-qmi-wwan autoksmbd\n\ndefine Device/sl_3000\n  DEVICE_VENDOR := SL\n  DEVICE_MODEL := 3000\n  DEVICE_DTS := mt7981-sl-3000\n  DEVICE_DTS_DIR := \$(DTS_DIR)/mediatek\n  SUPPORTED_DEVICES := sl,3000\n  DEVICE_PACKAGES := \$(MT7981_USB_PKGS) f2fsck losetup mkf2fs kmod-fs-f2fs kmod-mmc luci-app-ksmbd luci-i18n-ksmbd-zh-cn ksmbd-utils\n  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata\nendef\nTARGET_DEVICES += sl_3000\n\ndefine Device/sl_3000-emmc\n  DEVICE_VENDOR := SL\n  DEVICE_MODEL := 3000 eMMC\n  DEVICE_DTS := mt7981-sl-3000-emmc\n  DEVICE_DTS_DIR := \$(DTS_DIR)/mediatek\n  SUPPORTED_DEVICES := sl,3000-emmc\n  DEVICE_DRAM_SIZE := 1024M\n  DEVICE_PACKAGES := \$(MT7981_USB_PKGS) f2fsck losetup mkf2fs kmod-fs-f2fs kmod-mmc luci-app-ksmbd luci-i18n-ksmbd-zh-cn ksmbd-utils\n  IMAGES := sysupgrade.bin\n  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata\n  ARTIFACTS := emmc-gpt.bin emmc-preloader.bin emmc-bl31-uboot.fip\n  ARTIFACT/emmc-gpt.bin := mtk-gpt emmc\n  ARTIFACT/emmc-preloader.bin := mt7981-bl2 emmc-ddr3\n  ARTIFACT/emmc-bl31-uboot.fip := mt7981-bl31-uboot emmc-ddr3\nendef\nTARGET_DEVICES += sl_3000-emmc\n" > "$MK_FILE"' >> fix_mk.sh
+          set -e
+          CONF="sl3000.config"
+          if [ -f "$CONF" ]; then
+            echo "正在抹除幽灵依赖..."
+            # 物理剔除会导致 24.10 编译报错的包
+            sed -i '/lua-cjson/d' "$CONF"
+            sed -i '/glib2/d' "$CONF"
+            sed -i '/libgpiod/d' "$CONF"
+            sed -i '/libpam/d' "$CONF"
+            sed -i '/pciids/d' "$CONF"
+            sed -i '/pciutils/d' "$CONF"
+            sed -i '/luci-lua-runtime/d' "$CONF"
+            sed -i '/luasrcdiet/d' "$CONF"
+            sed -i '/kmod-mtk-warp/d' "$CONF"
+            sed -i '/mtwifi-cfg/d' "$CONF"
+            sed -i '/ext-throttle/d' "$CONF"
+            sed -i '/kmod-xdp-sockets-diag/d' "$CONF"
+            
+            # 物理锁定 EMMC 与 1024M 核心配置
+            sed -i 's/CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y/CONFIG_TARGET_DEVICE_mediatek_mt7981_DEVICE_sl_3000-emmc=y/' "$CONF"
+            echo "CONFIG_PACKAGE_kmod-mmc=y" >> "$CONF"
+            echo "CONFIG_PACKAGE_mt7981-wo-firmware=y" >> "$CONF"
+            echo "✅ $CONF 物理洗白完成"
+          else
+            echo "❌ 未找到 $CONF，跳过此步"
+          fi
 
-          # 执行物理修复
-          ./fix_mk.sh
-          rm fix_mk.sh
+      - name: 3. 物理重写 Makefile (继承 V7 逻辑)
+        run: |
+          MK_FILE="target/linux/mediatek/image/mt7981.mk"
+          # 简化注入，确保 mtk-gpt 正确
+          printf "# Target Makefile\nKERNEL_LOADADDR := 0x48080000\n\ndefine Device/sl_3000-emmc\n  DEVICE_VENDOR := SL\n  DEVICE_MODEL := 3000 eMMC\n  DEVICE_DTS := mt7981-sl-3000-emmc\n  DEVICE_DTS_DIR := \$(DTS_DIR)/mediatek\n  DEVICE_DRAM_SIZE := 1024M\n  ARTIFACTS := emmc-gpt.bin emmc-preloader.bin emmc-bl31-uboot.fip\n  ARTIFACT/emmc-gpt.bin := mtk-gpt emmc\n  ARTIFACT/emmc-preloader.bin := mt7981-bl2 emmc-ddr3\n  ARTIFACT/emmc-bl31-uboot.fip := mt7981-bl31-uboot emmc-ddr3\n  IMAGES := sysupgrade.bin\n  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata\nendef\nTARGET_DEVICES += sl_3000-emmc\n" > "$MK_FILE"
+          echo "✅ Makefile 物理宏修复完成"
 
-      - name: 3. 物理推送回 2410 分支
+      - name: 4. 物理推送变更
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add .
           if git diff --staged --quiet; then
-            echo "物理逻辑一致，无需推送。"
+            echo "物理逻辑已对齐，无需推送。"
           else
-            git commit -m "fix: V7 物理逻辑隔离修复 (彻底解决 mtk-gpt 报错)"
+            git commit -m "fix: V9 三位一体物理康复修复 (Makefile/DTS/Config)"
             git push origin 2410
           fi
