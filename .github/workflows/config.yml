@@ -1,62 +1,39 @@
-name: 一键修复推送到仓库源 (Auto-Fix)
+name: 一键修复推送到仓库源 (Repo-Fixer V2 - No EOF)
 
 on:
   workflow_dispatch:
 
 jobs:
-  physical-repair:
+  repair:
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
-      - name: 1. 物理检出仓库
+      - name: 1. 物理检出
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 2. 物理修复编译逻辑与 Config
+      - name: 2. 物理重写 mt7981.mk (禁用 EOF 修复版)
         run: |
           set -e
-          
-          echo "正在物理修复 MT7981 镜像构建宏 (彻底解决 Missing Build)..."
-          # 物理定位 target 下的 mk 文件并执行像素级替换
           MK_FILE="target/linux/mediatek/image/mt7981.mk"
-          if [ -f "$MK_FILE" ]; then
-            sed -i 's/mt798x-gpt/mtk-gpt/g' "$MK_FILE"
-            echo "✅ $MK_FILE 物理宏替换完成"
-          fi
+          
+          # 物理锁定路径，执行 printf 级覆盖，彻底根除 mt798x-gpt 报错
+          printf '#\n# Target Makefile for MediaTek Filogic 820 (MT7981) - Full Aligned for SL-3000\n#\n\nKERNEL_LOADADDR := 0x48080000\n\n# 常用软件包\nMT7981_USB_PKGS := automount blkid blockdev fdisk \\\n    kmod-nls-cp437 kmod-nls-iso8859-1 kmod-usb2 kmod-usb3 \\\n    luci-app-usb-printer luci-i18n-usb-printer-zh-cn \\\n    kmod-usb-net-rndis usbutils \\\n    kmod-usb-net-qmi-wwan autoksmbd\n\n# --- 标准版定义 ---\ndefine Device/sl_3000\n  DEVICE_VENDOR := SL\n  DEVICE_MODEL := 3000\n  DEVICE_DTS := mt7981-sl-3000\n  DEVICE_DTS_DIR := $(DTS_DIR)/mediatek\n  SUPPORTED_DEVICES := sl,3000\n  DEVICE_PACKAGES := $(MT7981_USB_PKGS) f2fsck losetup mkf2fs kmod-fs-f2fs kmod-mmc \\\n\tluci-app-ksmbd luci-i18n-ksmbd-zh-cn ksmbd-utils\n  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata\nendef\nTARGET_DEVICES += sl_3000\n\n# --- eMMC 1024M 物理全对齐定义 ---\ndefine Device/sl_3000-emmc\n  DEVICE_VENDOR := SL\n  DEVICE_MODEL := 3000 eMMC\n  DEVICE_DTS := mt7981-sl-3000-emmc\n  DEVICE_DTS_DIR := $(DTS_DIR)/mediatek\n  SUPPORTED_DEVICES := sl,3000-emmc\n  DEVICE_DRAM_SIZE := 1024M\n  DEVICE_PACKAGES := $(MT7981_USB_PKGS) f2fsck losetup mkf2fs kmod-fs-f2fs kmod-mmc \\\n\tluci-app-ksmbd luci-i18n-ksmbd-zh-cn ksmbd-utils\n  \n  # 物理修复：仅保留 sysupgrade\n  IMAGES := sysupgrade.bin\n  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata\n\n  # 物理生成：救砖全家桶\n  # 审计修复：将 mt798x-gpt 物理修正为 mtk-gpt\n  ARTIFACTS := emmc-gpt.bin emmc-preloader.bin emmc-bl31-uboot.fip\n  ARTIFACT/emmc-gpt.bin := mtk-gpt emmc\n  ARTIFACT/emmc-preloader.bin := mt7981-bl2 emmc-ddr3\n  ARTIFACT/emmc-bl31-uboot.fip := mt7981-bl31-uboot emmc-ddr3\nendef\nTARGET_DEVICES += sl_3000-emmc\n' > "$MK_FILE"
+          
+          echo "✅ $MK_FILE 已经过 printf 物理重写，已移除 EOF"
 
-          echo "正在物理清洗 sl3000.config (消除幽灵依赖)..."
-          CONFIG_FILE="sl3000.config"
-          if [ -f "$CONFIG_FILE" ]; then
-            # 抹除 24.10 不存在的内核模块与应用依赖
-            sed -i '/lua-cjson/d' "$CONFIG_FILE"
-            sed -i '/glib2/d' "$CONFIG_FILE"
-            sed -i '/libgpiod/d' "$CONFIG_FILE"
-            sed -i '/libpam/d' "$CONFIG_FILE"
-            sed -i '/pciids/d' "$CONFIG_FILE"
-            sed -i '/pciutils/d' "$CONFIG_FILE"
-            sed -i '/luci-lua-runtime/d' "$CONFIG_FILE"
-            sed -i '/luasrcdiet/d' "$CONFIG_FILE"
-            sed -i '/kmod-mtk-warp/d' "$CONFIG_FILE"
-            sed -i '/mtwifi-cfg/d' "$CONFIG_FILE"
-            
-            # 物理锁定 EMMC 相关核心包
-            echo "CONFIG_PACKAGE_kmod-mmc=y" >> "$CONFIG_FILE"
-            echo "CONFIG_PACKAGE_mt7981-wo-firmware=y" >> "$CONFIG_FILE"
-            echo "✅ $CONFIG_FILE 物理清洗完成"
-          fi
-
-      - name: 3. 物理执行仓库同步
+      - name: 3. 物理推送到仓库源
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add .
+          git add target/linux/mediatek/image/mt7981.mk
           
           if git diff --staged --quiet; then
-            echo "物理状态一致，未发现错误逻辑，无需推送。"
+            echo "物理逻辑一致，无需推送。"
           else
-            git commit -m "fix: 物理修复 GPT 构建宏并清洗幽灵依赖"
-            git push origin main
+            git commit -m "fix(image): 物理重写 mk 文件并禁用 EOF"
+            git push
           fi
