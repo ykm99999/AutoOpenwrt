@@ -1,4 +1,4 @@
-name: 一键修复推送到仓库源 (Repo-Fixer V11 - 跨分支物理洗白)
+name: 一键修复推送到仓库源 (Repo-Fixer V12 - 绝对物理覆盖)
 
 on:
   workflow_dispatch:
@@ -10,55 +10,49 @@ jobs:
       contents: write
 
     steps:
-      - name: 1. 物理检出全仓库 (包含所有分支)
+      - name: 1. 物理检出仓库
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 2. 物理修复 main 分支的 Config
+      - name: 2. 物理洗白并同步两个分支
         run: |
           set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # --- 步骤 A：物理处理 main 分支 ---
           git checkout main
           CONF="sl3000.config"
           if [ -f "$CONF" ]; then
-            echo "正在物理洗白 main 分支下的 $CONF..."
-            # 抹除幽灵依赖
-            sed -i '/lua-cjson/d' "$CONF"
-            sed -i '/glib2/d' "$CONF"
-            sed -i '/libgpiod/d' "$CONF"
-            sed -i '/libpam/d' "$CONF"
-            sed -i '/pciids/d' "$CONF"
-            sed -i '/pciutils/d' "$CONF"
-            sed -i '/luci-lua-runtime/d' "$CONF"
-            sed -i '/luasrcdiet/d' "$CONF"
-            sed -i '/kmod-mtk-warp/d' "$CONF"
-            sed -i '/mtwifi-cfg/d' "$CONF"
+            echo "正在对 main 分支执行物理手术..."
+            # 使用临时文件确保写入成功
+            TMP_CONF=$(mktemp)
+            # 原文照抄，同时物理剔除幽灵依赖
+            grep -vE "lua-cjson|glib2|libgpiod|libpam|pciids|pciutils|luci-lua-runtime|luasrcdiet|kmod-mtk-warp|mtwifi-cfg|ext-throttle|kmod-xdp-sockets-diag" "$CONF" > "$TMP_CONF"
             
-            # 物理锁定 eMMC 核心驱动
-            if ! grep -q "CONFIG_PACKAGE_kmod-mmc=y" "$CONF"; then
-              echo "CONFIG_PACKAGE_kmod-mmc=y" >> "$CONF"
-            fi
+            # 强制补全核心 EMMC 驱动
+            echo "CONFIG_PACKAGE_kmod-mmc=y" >> "$TMP_CONF"
+            echo "CONFIG_PACKAGE_mt7981-wo-firmware=y" >> "$TMP_CONF"
             
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
+            mv "$TMP_CONF" "$CONF"
             git add "$CONF"
-            git diff --staged --quiet || git commit -m "fix(config): 物理洗白 main 分支配置" && git push origin main
+            git commit -m "fix(config): 物理抹除幽灵依赖 (V12)" || echo "No changes"
+            git push origin main
           fi
 
-      - name: 3. 物理修复 2410 分支的 Makefile 与逻辑
-        run: |
-          set -e
+          # --- 步骤 B：物理处理 2410 分支 ---
           git checkout 2410
           
-          # 修复 Makefile 宏 (解决 Missing Build)
+          # 1. 物理重写 Makefile (彻底解决 mtk-gpt 报错)
           MK_FILE="target/linux/mediatek/image/mt7981.mk"
-          if [ -f "$MK_FILE" ]; then
-            printf "# Target Makefile\nKERNEL_LOADADDR := 0x48080000\n\ndefine Device/sl_3000-emmc\n  DEVICE_VENDOR := SL\n  DEVICE_MODEL := 3000 eMMC\n  DEVICE_DTS := mt7981-sl-3000-emmc\n  DEVICE_DTS_DIR := \$(DTS_DIR)/mediatek\n  DEVICE_DRAM_SIZE := 1024M\n  ARTIFACTS := emmc-gpt.bin emmc-preloader.bin emmc-bl31-uboot.fip\n  ARTIFACT/emmc-gpt.bin := mtk-gpt emmc\n  ARTIFACT/emmc-preloader.bin := mt7981-bl2 emmc-ddr3\n  ARTIFACT/emmc-bl31-uboot.fip := mt7981-bl31-uboot emmc-ddr3\n  IMAGES := sysupgrade.bin\n  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata\nendef\nTARGET_DEVICES += sl_3000-emmc\n" > "$MK_FILE"
-          fi
+          mkdir -p $(dirname "$MK_FILE")
+          printf "# Target Makefile\nKERNEL_LOADADDR := 0x48080000\n\ndefine Device/sl_3000-emmc\n  DEVICE_VENDOR := SL\n  DEVICE_MODEL := 3000 eMMC\n  DEVICE_DTS := mt7981-sl-3000-emmc\n  DEVICE_DTS_DIR := \$(DTS_DIR)/mediatek\n  DEVICE_DRAM_SIZE := 1024M\n  ARTIFACTS := emmc-gpt.bin emmc-preloader.bin emmc-bl31-uboot.fip\n  ARTIFACT/emmc-gpt.bin := mtk-gpt emmc\n  ARTIFACT/emmc-preloader.bin := mt7981-bl2 emmc-ddr3\n  ARTIFACT/emmc-bl31-uboot.fip := mt7981-bl31-uboot emmc-ddr3\n  IMAGES := sysupgrade.bin\n  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata\nendef\nTARGET_DEVICES += sl_3000-emmc\n" > "$MK_FILE"
 
-          # 物理同步 main 分支的 Config 到 2410 (确保编译时能用到最新洗白的配置)
+          # 2. 物理同步 main 的 Config 到 2410 分支
           git checkout main -- sl3000.config
           
           git add .
-          git diff --staged --quiet || git commit -m "fix(repo): 跨分支物理修复与配置同步" && git push origin 2410
+          git commit -m "fix(repo): 跨分支物理宏修复与基因同步 (V12)" || echo "No changes"
+          git push origin 2410
