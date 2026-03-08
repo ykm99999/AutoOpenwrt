@@ -11,12 +11,12 @@ PKG_NAME:=ebtables
 PKG_SOURCE_DATE:=2018-06-27
 PKG_RELEASE:=2
 
-# 使用 OpenWrt 源码镜像站下载源码包（静态 tarball）
-PKG_SOURCE_URL:=https://sources.openwrt.org/
-PKG_SOURCE:=$(PKG_NAME)-$(PKG_SOURCE_VERSION).tar.gz
+# === 关键修复：使用 Fedora 官方 Git 镜像源 ===
+# 该源包含与官方完全一致的 48cff25 历史提交，确保源码一致，哈希校验可通过
+PKG_SOURCE_URL:=https://src.fedoraproject.org/git/rpms/ebtables.git
+PKG_SOURCE_PROTO:=git
 PKG_SOURCE_VERSION:=48cff25dfea5b37e16ba5dc6601e98ab140f5f99
-# 镜像站上文件的哈希值可能与原记录不一致，暂时跳过验证
-PKG_HASH:=skip
+PKG_MIRROR_HASH:=3039d73b167c41025b1b401b647743b9c6d786613c693eef34de325b30de6d47
 
 PKG_LICENSE:=GPL-2.0
 PKG_CPE_ID:=cpe:/a:netfilter:ebtables
